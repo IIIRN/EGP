@@ -10,6 +10,7 @@ import { useEffect, useState } from "react";
 import { PurchaseOrder } from "@/types/po";
 import { VariationOrder } from "@/types/vo";
 import { Vendor } from "@/types/vendor";
+import liff from "@line/liff";
 
 interface POWithVendor extends PurchaseOrder {
     vendorPhone?: string;
@@ -26,6 +27,34 @@ export default function LiffDashboard() {
     const [vos, setVos] = useState<VariationOrder[]>([]);
     const [vendors, setVendors] = useState<Vendor[]>([]);
     const [loading, setLoading] = useState(true);
+    const [liffInitialized, setLiffInitialized] = useState(false);
+
+    // defaults to true unless explicitly false in .env
+    const isDevMode = process.env.NEXT_PUBLIC_SHOW_DEV_MODE !== "false";
+
+    useEffect(() => {
+        const initLiff = async () => {
+            if (isDevMode) {
+                setLiffInitialized(true);
+                return;
+            }
+            try {
+                await liff.init({ liffId: process.env.NEXT_PUBLIC_LIFF_ID || "1234567890-AbcdEfgh" });
+                if (!liff.isLoggedIn()) {
+                    liff.login({ redirectUri: window.location.href });
+                    return;
+                }
+                setLiffInitialized(true);
+            } catch (err) {
+                console.error("LIFF Init Error:", err);
+                setLiffInitialized(true); // fall-through to avoid entirely blocking
+            }
+        };
+
+        if (typeof window !== "undefined") {
+            initLiff();
+        }
+    }, [isDevMode]);
 
     useEffect(() => {
         if (!user || !currentProject) {
@@ -95,6 +124,15 @@ export default function LiffDashboard() {
         };
     }, [user, currentProject]);
 
+    if (!liffInitialized) {
+        return (
+            <div className="flex flex-col items-center justify-center p-8 h-screen bg-slate-50 text-center">
+                <Loader2 className="w-10 h-10 text-[#00c300] animate-spin mb-4" />
+                <p className="text-slate-500 font-medium tracking-wide">กำลังเชื่อมต่อ LINE...</p>
+            </div>
+        );
+    }
+
     if (!user) {
         return (
             <div className="flex flex-col items-center justify-center p-8 h-screen bg-slate-50 text-center">
@@ -103,9 +141,14 @@ export default function LiffDashboard() {
                 </div>
                 <h2 className="text-xl font-bold mb-2 text-slate-800">กรุณาเข้าสู่ระบบ</h2>
                 <p className="text-slate-500 mb-6">คุณต้องลงชื่อเข้าใช้ก่อนถึงจะดูข้อมูลสำหรับมือถือได้</p>
-                <Link href="/login" className="bg-blue-600 text-white px-6 py-3 rounded-full font-semibold shadow-lg">
-                    ไปที่หน้า Login
-                </Link>
+                <div className="flex flex-col gap-3 w-full max-w-xs">
+                    <Link href="/login" className="bg-blue-600 text-white px-6 py-3 rounded-full font-semibold shadow-lg w-full">
+                        ไปที่หน้า Login
+                    </Link>
+                    <Link href="/liff/binding" className="bg-white text-[#00c300] border border-[#00c300] px-6 py-3 rounded-full font-semibold shadow-sm w-full">
+                        ลงทะเบียนผ่านเบอร์ติดต่อ
+                    </Link>
+                </div>
             </div>
         );
     }
@@ -140,7 +183,9 @@ export default function LiffDashboard() {
                     <div>
                         <div className="flex items-center space-x-2">
                             <h1 className="text-xl font-bold">โครงการปัจจุบัน</h1>
-                            <span className="bg-white/20 text-white text-[10px] px-2 py-0.5 rounded-full border border-white/30 backdrop-blur-sm">DEV MODE</span>
+                            {isDevMode && (
+                                <span className="bg-white/20 text-white text-[10px] px-2 py-0.5 rounded-full border border-white/30 backdrop-blur-sm">DEV MODE</span>
+                            )}
                         </div>
                         <p className="opacity-90 text-sm truncate w-64">{currentProject.name}</p>
                     </div>
