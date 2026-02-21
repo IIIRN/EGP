@@ -1,0 +1,317 @@
+"use client";
+
+import { useAuth } from "@/context/AuthContext";
+import { Save, ShieldAlert, Loader2, MessageCircle, Link as LinkIcon, Bell } from "lucide-react";
+import { useEffect, useState } from "react";
+import { doc, getDoc, setDoc, serverTimestamp } from "firebase/firestore";
+import { db } from "@/lib/firebase";
+import Link from "next/link";
+
+interface LineSettings {
+    lineToken: string;
+    groupId: string;
+    userId: string;
+    isEnabled: boolean;
+}
+
+interface SystemSettings {
+    lineIntegration: LineSettings;
+    vendorTypes: string[];
+}
+
+export default function SettingsPage() {
+    const { userProfile } = useAuth();
+
+    const [loading, setLoading] = useState(true);
+    const [saving, setSaving] = useState(false);
+    const [successMsg, setSuccessMsg] = useState("");
+    const [errorMsg, setErrorMsg] = useState("");
+
+    const [settings, setSettings] = useState<SystemSettings>({
+        lineIntegration: {
+            lineToken: "",
+            groupId: "",
+            userId: "",
+            isEnabled: false,
+        },
+        vendorTypes: ["วัสดุก่อสร้าง general", "เครื่องมือ-เครื่องจักร", "ผู้รับเหมาช่วง (Sub-contractor)"],
+    });
+
+    const [newVendorType, setNewVendorType] = useState("");
+
+    useEffect(() => {
+        async function fetchSettings() {
+            try {
+                // Fetch line settings from a global config document
+                const docRef = doc(db, "system_settings", "global_config");
+                const docSnap = await getDoc(docRef);
+
+                if (docSnap.exists()) {
+                    setSettings(prev => ({ ...prev, ...docSnap.data() }));
+                }
+            } catch (error) {
+                console.error("Error fetching settings:", error);
+            } finally {
+                setLoading(false);
+            }
+        }
+
+        fetchSettings();
+    }, []);
+
+    // Only Admin can edit system settings (or bootstrap user)
+    const isAdmin = userProfile?.role === "admin" || !userProfile;
+    if (!isAdmin) {
+        return (
+            <div className="bg-red-50 border border-red-200 text-red-800 p-6 rounded-lg text-center flex flex-col items-center">
+                <ShieldAlert className="w-12 h-12 text-red-500 mb-3" />
+                <h3 className="font-bold text-lg">ไม่มีสิทธิ์ใช้งาน</h3>
+                <p className="mb-4">เฉพาะผู้ดูแลระบบ (Admin) เท่านั้นที่สามารถจัดการตั้งค่าระบบได้</p>
+                <Link href="/dashboard" className="bg-red-600 text-white px-4 py-2 rounded shadow hover:bg-red-700 transition">
+                    กลับไปที่หน้าหลัก
+                </Link>
+            </div>
+        );
+    }
+
+    const handleSave = async (e: React.FormEvent) => {
+        e.preventDefault();
+        setSaving(true);
+        setErrorMsg("");
+        setSuccessMsg("");
+
+        try {
+            const docRef = doc(db, "system_settings", "global_config");
+            await setDoc(docRef, {
+                ...settings,
+                updatedAt: serverTimestamp(),
+                updatedBy: userProfile?.uid || "unknown"
+            });
+
+            setSuccessMsg("บันทึกการตั้งค่าระบบเรียบร้อยแล้ว");
+
+            // clear success message after 3 seconds
+            setTimeout(() => {
+                setSuccessMsg("");
+            }, 3000);
+
+        } catch (error: any) {
+            console.error("Error saving settings:", error);
+            setErrorMsg("เกิดข้อผิดพลาดในการบันทึกข้อมูล: " + error.message);
+        } finally {
+            setSaving(false);
+        }
+    };
+
+    if (loading) {
+        return (
+            <div className="flex flex-col items-center justify-center p-12">
+                <Loader2 className="animate-spin w-8 h-8 text-blue-600 mb-4" />
+                <p className="text-slate-500">กำลังโหลดการตั้งค่าระบบ...</p>
+            </div>
+        );
+    }
+
+    return (
+        <div className="max-w-3xl mx-auto space-y-6">
+            <div>
+                <h1 className="text-2xl font-bold text-slate-900 flex items-center">
+                    <MessageCircle className="w-6 h-6 mr-3 text-green-500" />
+                    การตั้งค่าระบบและแจ้งเตือน (LINE OA)
+                </h1>
+                <p className="text-sm text-slate-500 mt-1">
+                    กำหนดข้อมูลการเชื่อมต่อ LINE สำหรับแจ้งเตือนการอนุมัติ สร้างใบสั่งงาน (PO/VO) และอื่น ๆ
+                </p>
+            </div>
+
+            <form onSubmit={handleSave} className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+                <div className="p-8 space-y-8">
+
+                    {errorMsg && (
+                        <div className="bg-red-50 text-red-700 p-4 rounded-lg flex items-center text-sm border border-red-100">
+                            <ShieldAlert className="w-5 h-5 mr-2 flex-shrink-0" />
+                            {errorMsg}
+                        </div>
+                    )}
+
+                    {successMsg && (
+                        <div className="bg-green-50 text-green-700 p-4 rounded-lg flex items-center text-sm border border-green-100">
+                            <Bell className="w-5 h-5 mr-2 flex-shrink-0" />
+                            {successMsg}
+                        </div>
+                    )}
+
+                    {/* Enable Toggle */}
+                    <div className="flex items-center space-x-3 bg-slate-50 p-4 border border-slate-200 rounded-lg">
+                        <label className="relative inline-flex items-center cursor-pointer">
+                            <input
+                                type="checkbox"
+                                checked={settings.lineIntegration.isEnabled}
+                                onChange={(e) => setSettings({ ...settings, lineIntegration: { ...settings.lineIntegration, isEnabled: e.target.checked } })}
+                                className="sr-only peer"
+                            />
+                            <div className="w-11 h-6 bg-slate-300 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-green-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-green-500"></div>
+                        </label>
+                        <div>
+                            <span className="text-sm font-bold text-slate-800 block">
+                                เปิดใช้งานการแจ้งเตือนผ่าน LINE
+                            </span>
+                            <span className="text-xs text-slate-500">
+                                {settings.lineIntegration.isEnabled ? "ระบบจะส่งข้อความแจ้งเตือนเมื่อมีการดำเนินการ PO/VO" : "ระบบปิดการแจ้งเตือนอยู่ จะไม่มีการส่งข้อความใด ๆ ไปยัง LINE"}
+                            </span>
+                        </div>
+                    </div>
+
+                    <div className={`space-y-6 ${!settings.lineIntegration.isEnabled ? 'opacity-50 grayscale pointer-events-none' : ''}`}>
+
+                        <div>
+                            <label className="block text-sm font-medium text-slate-700 mb-1 flex items-center">
+                                <LinkIcon className="w-4 h-4 mr-1 text-slate-400" />
+                                LINE Channel Access Token <span className="text-red-500 ml-1">*</span>
+                            </label>
+                            <input
+                                type="text"
+                                required={settings.lineIntegration.isEnabled}
+                                value={settings.lineIntegration.lineToken}
+                                onChange={(e) => setSettings({ ...settings, lineIntegration: { ...settings.lineIntegration, lineToken: e.target.value } })}
+                                className="w-full border border-slate-300 rounded-lg py-2 px-3 text-sm focus:ring-green-500 focus:border-green-500 font-mono"
+                                placeholder="เช่น wY3mZ...vL2X"
+                            />
+                            <p className="text-xs text-slate-400 mt-2">
+                                นำมาจาก LINE Developers Console (Long-lived access token)
+                            </p>
+                        </div>
+
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                            <div>
+                                <label className="block text-sm font-medium text-slate-700 mb-1">
+                                    Group ID ทั่วไป
+                                </label>
+                                <input
+                                    type="text"
+                                    value={settings.lineIntegration.groupId}
+                                    onChange={(e) => setSettings({ ...settings, lineIntegration: { ...settings.lineIntegration, groupId: e.target.value } })}
+                                    className="w-full border border-slate-300 rounded-lg py-2 px-3 text-sm focus:ring-green-500 focus:border-green-500"
+                                    placeholder="เช่น C12345678... (ถ้าจะให้ส่งเข้ากลุ่ม)"
+                                />
+                            </div>
+
+                            <div>
+                                <label className="block text-sm font-medium text-slate-700 mb-1">
+                                    User ID รับเรื่องแจ้งเตือน
+                                </label>
+                                <input
+                                    type="text"
+                                    value={settings.lineIntegration.userId}
+                                    onChange={(e) => setSettings({ ...settings, lineIntegration: { ...settings.lineIntegration, userId: e.target.value } })}
+                                    className="w-full border border-slate-300 rounded-lg py-2 px-3 text-sm focus:ring-green-500 focus:border-green-500"
+                                    placeholder="เช่น U12345678... (แจ้งเตือนหาคนนี้เป็นหลัก)"
+                                />
+                            </div>
+                        </div>
+
+                        <div className="bg-green-50 rounded-lg p-4 border border-green-100 flex start">
+                            <MessageCircle className="w-5 h-5 text-green-600 mr-3 mt-0.5" />
+                            <div className="text-sm text-green-800">
+                                <strong>คำแนะนำการใช้งาน:</strong>
+                                <ul className="list-disc list-inside mt-2 space-y-1 text-green-700">
+                                    <li>บอทต้องอยู่ในกลุ่ม LINE (ถ้าใช้ Group ID) ถึงจะส่งข้อความได้</li>
+                                    <li>อย่างน้อยควรใส่ Group ID หรือ User ID อย่างใดอย่างหนึ่งเป็นตัวหลัก</li>
+                                    <li>อย่าลืมเอาบอท LINE OA แอดเข้ากลุ่มก่อนทดสอบการตอบสนอง</li>
+                                </ul>
+                            </div>
+                        </div>
+
+                    </div>
+                </div>
+
+                {/* Vendor Types Section */}
+                <div className="p-8 border-t border-slate-200">
+                    <div>
+                        <h2 className="text-xl font-bold text-slate-800 mb-2">ประเภทคู่ค้า / ผู้ขาย (Vendor Categories)</h2>
+                        <p className="text-sm text-slate-500 mb-6">
+                            เพิ่มหรือลบประเภทสำหรับใช้จัดกลุ่มร้านค้า วัสดุ หรือผู้รับเหมาในระบบ
+                        </p>
+                    </div>
+
+                    <div className="space-y-4 max-w-lg">
+                        <div className="flex gap-2">
+                            <input
+                                type="text"
+                                value={newVendorType}
+                                onChange={(e) => setNewVendorType(e.target.value)}
+                                placeholder="เช่น เครื่องมือช่าง, รถแบ็คโฮ"
+                                className="flex-1 border border-slate-300 rounded-lg py-2 px-3 text-sm focus:ring-blue-500 focus:border-blue-500"
+                                onKeyDown={(e) => {
+                                    if (e.key === 'Enter') {
+                                        e.preventDefault();
+                                        if (newVendorType.trim() && !settings.vendorTypes.includes(newVendorType.trim())) {
+                                            setSettings(prev => ({
+                                                ...prev,
+                                                vendorTypes: [...prev.vendorTypes, newVendorType.trim()]
+                                            }));
+                                            setNewVendorType("");
+                                        }
+                                    }
+                                }}
+                            />
+                            <button
+                                type="button"
+                                onClick={() => {
+                                    if (newVendorType.trim() && !settings.vendorTypes.includes(newVendorType.trim())) {
+                                        setSettings(prev => ({
+                                            ...prev,
+                                            vendorTypes: [...prev.vendorTypes, newVendorType.trim()]
+                                        }));
+                                        setNewVendorType("");
+                                    }
+                                }}
+                                className="px-4 py-2 bg-slate-800 text-white text-sm font-semibold rounded-lg hover:bg-slate-700 transition"
+                            >
+                                เพิ่ม
+                            </button>
+                        </div>
+
+                        <div className="bg-slate-50 p-4 rounded-lg border border-slate-200 min-h-[100px]">
+                            {settings.vendorTypes.length === 0 ? (
+                                <p className="text-slate-400 text-sm text-center py-4">ยังไม่มีประเภทคู่ค้า</p>
+                            ) : (
+                                <div className="flex flex-wrap gap-2">
+                                    {settings.vendorTypes.map((vType, idx) => (
+                                        <span key={idx} className="inline-flex items-center bg-white border border-slate-300 text-slate-700 text-sm font-medium px-3 py-1 rounded-full shadow-sm">
+                                            {vType}
+                                            <button
+                                                type="button"
+                                                onClick={() => {
+                                                    setSettings(prev => ({
+                                                        ...prev,
+                                                        vendorTypes: prev.vendorTypes.filter(t => t !== vType)
+                                                    }));
+                                                }}
+                                                className="ml-2 text-slate-400 hover:text-red-500 focus:outline-none focus:text-red-500 transition-colors"
+                                                title={`ลบ ${vType}`}
+                                            >
+                                                &times;
+                                            </button>
+                                        </span>
+                                    ))}
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                </div>
+
+                <div className="bg-slate-50 border-t border-slate-200 p-4 flex justify-end space-x-3">
+                    <button
+                        type="submit"
+                        disabled={saving}
+                        className="inline-flex items-center px-4 py-2 text-sm font-medium text-white bg-green-600 rounded-lg hover:bg-green-500 shadow-sm transition-colors disabled:opacity-50"
+                    >
+                        {saving ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Save className="w-4 h-4 mr-2" />}
+                        บันทึกการตั้งค่าทั้งหมด
+                    </button>
+                </div>
+            </form>
+        </div>
+    );
+}
