@@ -26,6 +26,11 @@ export default function EditPOPage({ params }: { params: Promise<{ id: string }>
     const [vatRate, setVatRate] = useState(7);
     const [saving, setSaving] = useState(false);
     const [success, setSuccess] = useState(false);
+    const [creditDays, setCreditDays] = useState(30);
+    const [poNumber, setPoNumber] = useState("");
+
+    const [companySettings, setCompanySettings] = useState<any>(null);
+    const [selectedSignatureId, setSelectedSignatureId] = useState("");
 
     useEffect(() => {
         async function fetchVendors() {
@@ -61,6 +66,12 @@ export default function EditPOPage({ params }: { params: Promise<{ id: string }>
                     setPo(data);
                     setVendorId(data.vendorId || "");
                     setVatRate(data.vatRate || 7);
+                    setCreditDays(data.creditDays ?? 30);
+                    setPoNumber(data.poNumber || "");
+
+                    if (data.signatureId) {
+                        setSelectedSignatureId(data.signatureId);
+                    }
 
                     if (data.items && data.items.length > 0) {
                         setItems(data.items);
@@ -77,8 +88,25 @@ export default function EditPOPage({ params }: { params: Promise<{ id: string }>
             }
         }
 
+        async function fetchCompanySettings() {
+            try {
+                const configRef = doc(db, "system_settings", "global_config");
+                const configSnap = await getDoc(configRef);
+                if (configSnap.exists() && configSnap.data().companySettings) {
+                    const settings = configSnap.data().companySettings;
+                    setCompanySettings(settings);
+
+                    // We only want to set a default if PO data hasn't already loaded and set one. 
+                    // To handle async race conditions easily, we can just do it if not set later or handled via selectedSignatureId directly.
+                }
+            } catch (error) {
+                console.error("Error fetching company settings:", error);
+            }
+        }
+
         fetchVendors();
         fetchPO();
+        fetchCompanySettings();
     }, [resolvedParams.id, router]);
 
     const handleAddItem = () => {
@@ -137,8 +165,14 @@ export default function EditPOPage({ params }: { params: Promise<{ id: string }>
                 amount: Number(item.amount) || 0
             }));
 
+            let signatureData = null;
+            if (companySettings?.signatures && selectedSignatureId) {
+                signatureData = companySettings.signatures.find((s: any) => s.id === selectedSignatureId) || null;
+            }
+
             const updatedPO = {
-                // we don't change poNumber, projectId, createdBy, createdAt etc.
+                // we don't change projectId, createdBy, createdAt etc.
+                poNumber: poNumber.trim(),
                 vendorId: vendorId || "unknown",
                 vendorName: selectedVendor ? selectedVendor.name : "ไม่ระบุผู้ขาย",
                 items: sanitizedItems,
@@ -147,6 +181,9 @@ export default function EditPOPage({ params }: { params: Promise<{ id: string }>
                 vatAmount,
                 totalAmount,
                 status: status,
+                creditDays: creditDays,
+                signatureId: selectedSignatureId,
+                signatureData: signatureData,
                 updatedAt: serverTimestamp(),
             };
 
@@ -217,6 +254,17 @@ export default function EditPOPage({ params }: { params: Promise<{ id: string }>
 
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                         <div>
+                            <label className="block text-sm font-medium text-slate-700 mb-1">เลขที่ใบสั่งซื้อ (PO Number) <span className="text-red-500">*</span></label>
+                            <input
+                                type="text"
+                                value={poNumber}
+                                onChange={(e) => setPoNumber(e.target.value)}
+                                className="w-full border border-slate-300 rounded-lg py-2 px-3 text-sm focus:ring-blue-500 focus:border-blue-500 bg-white"
+                                placeholder="PO-XXXXXX-XXX"
+                            />
+                        </div>
+
+                        <div>
                             <label className="block text-sm font-medium text-slate-700 mb-1">ผู้ขาย / คู่ค้า <span className="text-red-500">*</span></label>
                             <select
                                 value={vendorId}
@@ -230,10 +278,35 @@ export default function EditPOPage({ params }: { params: Promise<{ id: string }>
                             </select>
                         </div>
 
-                        <div className="grid grid-cols-2 gap-4">
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                             <div>
-                                <label className="block text-sm font-medium text-slate-700 mb-1">วันที่สร้าง (ไม่สามารถเปลี่ยนได้)</label>
+                                <label className="block text-sm font-medium text-slate-700 mb-1">วันที่สร้าง</label>
                                 <input type="text" disabled value={po.createdAt ? (po.createdAt as any).toDate().toLocaleDateString('th-TH') : 'ไม่ระบุ'} className="w-full border border-slate-200 bg-slate-50 rounded-lg py-2 px-3 text-sm text-slate-500 cursor-not-allowed" />
+                            </div>
+                            <div>
+                                <label className="block text-sm font-medium text-slate-700 mb-1">เครดิต (วัน)</label>
+                                <input
+                                    type="number"
+                                    value={creditDays}
+                                    onChange={(e) => setCreditDays(Number(e.target.value))}
+                                    className="w-full border border-slate-300 rounded-lg py-2 px-3 text-sm text-slate-600 focus:ring-blue-500 focus:border-blue-500 bg-white"
+                                    min="0"
+                                />
+                            </div>
+                            <div>
+                                <label className="block text-sm font-medium text-slate-700 mb-1">เลือกลายเซ็น</label>
+                                <select
+                                    value={selectedSignatureId}
+                                    onChange={(e) => setSelectedSignatureId(e.target.value)}
+                                    className="w-full border border-slate-300 rounded-lg py-2 px-3 text-sm focus:ring-blue-500 focus:border-blue-500 bg-white"
+                                >
+                                    <option value="">ไม่ระบุลายเซ็น</option>
+                                    {companySettings?.signatures?.map((sig: any) => (
+                                        <option key={sig.id} value={sig.id}>
+                                            {sig.name} ({sig.position})
+                                        </option>
+                                    ))}
+                                </select>
                             </div>
                         </div>
                     </div>

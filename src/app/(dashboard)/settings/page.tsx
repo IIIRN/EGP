@@ -1,10 +1,11 @@
 "use client";
 
 import { useAuth } from "@/context/AuthContext";
-import { Save, ShieldAlert, Loader2, MessageCircle, Link as LinkIcon, Bell } from "lucide-react";
+import { Save, ShieldAlert, Loader2, MessageCircle, Link as LinkIcon, Bell, Trash2, Plus, UploadCloud, Database, CheckCircle, ExternalLink, RefreshCw } from "lucide-react";
 import { useEffect, useState } from "react";
-import { doc, getDoc, setDoc, serverTimestamp } from "firebase/firestore";
-import { db } from "@/lib/firebase";
+import { doc, getDoc, setDoc, serverTimestamp, collection, query, where, orderBy, limit, getDocs } from "firebase/firestore";
+import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
+import { db, storage } from "@/lib/firebase";
 import Link from "next/link";
 
 interface LineSettings {
@@ -14,8 +15,26 @@ interface LineSettings {
     isEnabled: boolean;
 }
 
+export interface SignatureItem {
+    id: string;
+    name: string;
+    position: string;
+    signatureUrl: string;
+}
+
+interface CompanySettings {
+    name: string;
+    address: string;
+    phone: string;
+    email: string;
+    logoUrl?: string;
+    signatureUrl?: string; // legacy
+    signatures?: SignatureItem[];
+}
+
 interface SystemSettings {
     lineIntegration: LineSettings;
+    companySettings: CompanySettings;
     vendorTypes: string[];
 }
 
@@ -34,10 +53,58 @@ export default function SettingsPage() {
             userId: "",
             isEnabled: false,
         },
+        companySettings: {
+            name: "บริษัท พาวเวอร์เทค เอนจิเนียริ่ง จำกัด",
+            address: "9/10 ถ.มิตรสาร ต.ประตูชัย อ.พระนครศรีอยุธยา จ.พระนครศรีอยุธยา 13000",
+            phone: "083-995-5629, 083-995-4495",
+            email: "Powertec.civil@gmail.com",
+            logoUrl: "",
+            signatureUrl: "",
+            signatures: [],
+        },
         vendorTypes: ["วัสดุก่อสร้าง general", "เครื่องมือ-เครื่องจักร", "ผู้รับเหมาช่วง (Sub-contractor)"],
     });
 
     const [newVendorType, setNewVendorType] = useState("");
+
+    const [indexStatuses, setIndexStatuses] = useState<{ name: string; status: 'idle' | 'loading' | 'ready' | 'missing' | 'error'; link?: string; errorMsg?: string }[]>([
+        { name: "ใบสั่งซื้อ (PO) เรียงตามเวลา", status: 'idle' },
+        { name: "งานเพิ่ม-ลด (VO) เรียงตามเวลา", status: 'idle' },
+    ]);
+
+    const checkIndexes = async () => {
+        setIndexStatuses(prev => prev.map(i => ({ ...i, status: 'loading', errorMsg: undefined, link: undefined })));
+
+        // 1. Check PO index
+        try {
+            const poQ = query(collection(db, "purchase_orders"), where("projectId", "==", "dummy"), orderBy("createdAt", "desc"), limit(1));
+            await getDocs(poQ);
+            setIndexStatuses(prev => prev.map(i => i.name.includes("PO") ? { ...i, status: 'ready' } : i));
+        } catch (error: any) {
+            console.error("PO Index Check Error:", error);
+            if (error.message && error.message.includes("index")) {
+                const urlMatch = error.message.match(/https:\/\/console\.firebase\.google\.com[^\s]*/);
+                setIndexStatuses(prev => prev.map(i => i.name.includes("PO") ? { ...i, status: 'missing', link: urlMatch ? urlMatch[0] : '' } : i));
+            } else {
+                setIndexStatuses(prev => prev.map(i => i.name.includes("PO") ? { ...i, status: 'error', errorMsg: error.message } : i));
+            }
+        }
+
+        // 2. Check VO index
+        try {
+            const voQ = query(collection(db, "variation_orders"), where("projectId", "==", "dummy"), orderBy("createdAt", "desc"), limit(1));
+            await getDocs(voQ);
+            setIndexStatuses(prev => prev.map(i => i.name.includes("VO") ? { ...i, status: 'ready' } : i));
+        } catch (error: any) {
+            console.error("VO Index Check Error:", error);
+            if (error.message && error.message.includes("index")) {
+                const urlMatch = error.message.match(/https:\/\/console\.firebase\.google\.com[^\s]*/);
+                setIndexStatuses(prev => prev.map(i => i.name.includes("VO") ? { ...i, status: 'missing', link: urlMatch ? urlMatch[0] : '' } : i));
+            } else {
+                setIndexStatuses(prev => prev.map(i => i.name.includes("VO") ? { ...i, status: 'error', errorMsg: error.message } : i));
+            }
+        }
+    };
 
     useEffect(() => {
         async function fetchSettings() {
@@ -58,6 +125,85 @@ export default function SettingsPage() {
 
         fetchSettings();
     }, []);
+
+    const handleLogoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+        setSaving(true);
+        try {
+            const storageRef = ref(storage, `settings/logo_${Date.now()}_${file.name}`);
+            await uploadBytes(storageRef, file);
+            const url = await getDownloadURL(storageRef);
+            setSettings({ ...settings, companySettings: { ...settings.companySettings, logoUrl: url } });
+        } catch (error) {
+            console.error("Error uploading logo:", error);
+            setErrorMsg("อัปโหลดโลโก้ล้มเหลว");
+        } finally {
+            setSaving(false);
+        }
+    };
+
+    const handleSignatureUpload = async (e: React.ChangeEvent<HTMLInputElement>, id: string) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+        setSaving(true);
+        try {
+            const storageRef = ref(storage, `settings/signature_${Date.now()}_${file.name}`);
+            await uploadBytes(storageRef, file);
+            const url = await getDownloadURL(storageRef);
+
+            const currentSigs = settings.companySettings.signatures || [];
+            const updatedSignatures = currentSigs.map(sig =>
+                sig.id === id ? { ...sig, signatureUrl: url } : sig
+            );
+
+            setSettings({ ...settings, companySettings: { ...settings.companySettings, signatures: updatedSignatures } });
+        } catch (error) {
+            console.error("Error uploading signature:", error);
+            setErrorMsg("อัปโหลดลายเซ็นล้มเหลว");
+        } finally {
+            setSaving(false);
+        }
+    };
+
+    const addSignature = () => {
+        const newSig: SignatureItem = {
+            id: Date.now().toString(),
+            name: "",
+            position: "",
+            signatureUrl: ""
+        };
+        const currentSigs = settings.companySettings.signatures || [];
+        setSettings({
+            ...settings,
+            companySettings: {
+                ...settings.companySettings,
+                signatures: [...currentSigs, newSig]
+            }
+        });
+    };
+
+    const removeSignature = (id: string) => {
+        const currentSigs = settings.companySettings.signatures || [];
+        setSettings({
+            ...settings,
+            companySettings: {
+                ...settings.companySettings,
+                signatures: currentSigs.filter(s => s.id !== id)
+            }
+        });
+    };
+
+    const updateSignature = (id: string, field: keyof SignatureItem, value: string) => {
+        const currentSigs = settings.companySettings.signatures || [];
+        setSettings({
+            ...settings,
+            companySettings: {
+                ...settings.companySettings,
+                signatures: currentSigs.map(s => s.id === id ? { ...s, [field]: value } : s)
+            }
+        });
+    };
 
     // Only Admin can edit system settings (or bootstrap user)
     const isAdmin = userProfile?.role === "admin" || !userProfile;
@@ -225,6 +371,182 @@ export default function SettingsPage() {
                     </div>
                 </div>
 
+                {/* Company Settings for PDF Header */}
+                <div className="p-8 border-t border-slate-200">
+                    <div className="mb-6">
+                        <h2 className="text-xl font-bold text-slate-800 mb-2">ข้อมูลหัวกระดาษ (PDF เอกสาร)</h2>
+                        <p className="text-sm text-slate-500">
+                            ข้อมูลบริษัทสำหรับแสดงบนหัวกระดาษเวลาพิมพ์ใบสั่งซื้อ (PO) และเอกสารต่างๆ
+                        </p>
+                    </div>
+
+                    <div className="space-y-4 max-w-2xl">
+                        <div>
+                            <label className="block text-sm font-medium text-slate-700 mb-1">
+                                ชื่อบริษัท (Company Name)
+                            </label>
+                            <input
+                                type="text"
+                                value={settings.companySettings?.name || ""}
+                                onChange={(e) => setSettings({ ...settings, companySettings: { ...settings.companySettings, name: e.target.value } })}
+                                className="w-full border border-slate-300 rounded-lg py-2 px-3 text-sm focus:ring-blue-500 focus:border-blue-500"
+                                placeholder="เช่น บริษัท พาวเวอร์เทค เอนจิเนียริ่ง จำกัด"
+                            />
+                        </div>
+
+                        <div>
+                            <label className="block text-sm font-medium text-slate-700 mb-1">
+                                ที่อยู่ (Address)
+                            </label>
+                            <input
+                                type="text"
+                                value={settings.companySettings?.address || ""}
+                                onChange={(e) => setSettings({ ...settings, companySettings: { ...settings.companySettings, address: e.target.value } })}
+                                className="w-full border border-slate-300 rounded-lg py-2 px-3 text-sm focus:ring-blue-500 focus:border-blue-500"
+                            />
+                        </div>
+
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div>
+                                <label className="block text-sm font-medium text-slate-700 mb-1">
+                                    เบอร์โทรศัพท์ (Phone)
+                                </label>
+                                <input
+                                    type="text"
+                                    value={settings.companySettings?.phone || ""}
+                                    onChange={(e) => setSettings({ ...settings, companySettings: { ...settings.companySettings, phone: e.target.value } })}
+                                    className="w-full border border-slate-300 rounded-lg py-2 px-3 text-sm focus:ring-blue-500 focus:border-blue-500"
+                                />
+                            </div>
+                            <div>
+                                <label className="block text-sm font-medium text-slate-700 mb-1">
+                                    อีเมล (Email)
+                                </label>
+                                <input
+                                    type="email"
+                                    value={settings.companySettings?.email || ""}
+                                    onChange={(e) => setSettings({ ...settings, companySettings: { ...settings.companySettings, email: e.target.value } })}
+                                    className="w-full border border-slate-300 rounded-lg py-2 px-3 text-sm focus:ring-blue-500 focus:border-blue-500"
+                                />
+                            </div>
+                        </div>
+
+                        <div className="mt-6 border-t border-slate-200 pt-4">
+                            <div>
+                                <label className="block text-sm font-medium text-slate-700 mb-1">
+                                    โลโก้ (Logo)
+                                </label>
+                                <div className="flex items-center gap-4">
+                                    <input
+                                        type="file"
+                                        accept="image/*"
+                                        onChange={handleLogoUpload}
+                                        className="hidden"
+                                        id="upload-logo"
+                                    />
+                                    <label
+                                        htmlFor="upload-logo"
+                                        className="cursor-pointer inline-flex items-center px-4 py-2 border border-slate-300 rounded-lg text-sm font-medium text-slate-700 bg-white hover:bg-slate-50 shadow-sm"
+                                    >
+                                        <UploadCloud className="w-4 h-4 mr-2" />
+                                        อัปโหลดโลโก้ใหม่
+                                    </label>
+                                    {settings.companySettings?.logoUrl && (
+                                        <div className="p-2 bg-slate-50 border border-slate-200 rounded max-w-xs h-16 flex items-center justify-center">
+                                            <img src={settings.companySettings.logoUrl} alt="Logo Preview" className="max-h-full max-w-full object-contain" />
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+                        </div>
+
+                        <div className="mt-8">
+                            <div className="flex justify-between items-center mb-4">
+                                <label className="block text-base font-semibold text-slate-800">
+                                    ลายเซ็นผู้อนุมัติ / ผู้จัดการ (Signatures)
+                                </label>
+                                <button
+                                    type="button"
+                                    onClick={addSignature}
+                                    className="inline-flex items-center px-3 py-1.5 border border-blue-600 text-blue-600 rounded-lg text-sm font-medium hover:bg-blue-50 transition-colors"
+                                >
+                                    <Plus className="w-4 h-4 mr-1" />
+                                    เพิ่มลายเซ็น
+                                </button>
+                            </div>
+
+                            {(!settings.companySettings.signatures || settings.companySettings.signatures.length === 0) && (
+                                <div className="text-sm text-slate-500 bg-slate-50 border border-slate-200 p-4 rounded-lg text-center">
+                                    ยังไม่มีลายเซ็นในระบบ กดปุ่ม "เพิ่มลายเซ็น" ด้านบน
+                                </div>
+                            )}
+
+                            <div className="space-y-4">
+                                {settings.companySettings.signatures?.map((sig, idx) => (
+                                    <div key={sig.id} className="p-4 border border-slate-200 rounded-lg bg-slate-50 flex flex-col md:flex-row gap-4 items-start md:items-center">
+                                        <div className="flex-1 space-y-3 w-full">
+                                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                                <div>
+                                                    <label className="block text-xs font-medium text-slate-500 mb-1">ชื่อ-สกุล</label>
+                                                    <input
+                                                        type="text"
+                                                        value={sig.name}
+                                                        onChange={(e) => updateSignature(sig.id, "name", e.target.value)}
+                                                        className="w-full border border-slate-300 rounded-md py-1.5 px-3 text-sm focus:ring-blue-500 focus:border-blue-500"
+                                                        placeholder="( นายธรรม ทรงดี )"
+                                                    />
+                                                </div>
+                                                <div>
+                                                    <label className="block text-xs font-medium text-slate-500 mb-1">ตำแหน่ง</label>
+                                                    <input
+                                                        type="text"
+                                                        value={sig.position}
+                                                        onChange={(e) => updateSignature(sig.id, "position", e.target.value)}
+                                                        className="w-full border border-slate-300 rounded-md py-1.5 px-3 text-sm focus:ring-blue-500 focus:border-blue-500"
+                                                        placeholder="ผู้จัดการโครงการ"
+                                                    />
+                                                </div>
+                                            </div>
+                                            <div className="flex items-center gap-3">
+                                                <input
+                                                    type="file"
+                                                    accept="image/*"
+                                                    onChange={(e) => handleSignatureUpload(e, sig.id)}
+                                                    className="hidden"
+                                                    id={`upload-sig-${sig.id}`}
+                                                />
+                                                <label
+                                                    htmlFor={`upload-sig-${sig.id}`}
+                                                    className="cursor-pointer inline-flex items-center px-3 py-1.5 border border-slate-300 rounded bg-white text-xs font-medium text-slate-700 hover:bg-slate-50"
+                                                >
+                                                    <UploadCloud className="w-4 h-4 mr-1" />
+                                                    อัปโหลดรูปลายเซ็น
+                                                </label>
+
+                                                {sig.signatureUrl && (
+                                                    <div className="h-10 px-2 bg-white border border-slate-200 rounded flex items-center justify-center">
+                                                        <img src={sig.signatureUrl} alt="Sig Preview" className="max-h-full max-w-[120px] object-contain" />
+                                                    </div>
+                                                )}
+                                            </div>
+                                        </div>
+
+                                        <button
+                                            type="button"
+                                            onClick={() => removeSignature(sig.id)}
+                                            className="text-red-500 hover:text-red-700 p-2"
+                                            title="ลบลายเซ็น"
+                                        >
+                                            <Trash2 className="w-5 h-5" />
+                                        </button>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+
+                    </div>
+                </div>
+
                 {/* Vendor Types Section */}
                 <div className="p-8 border-t border-slate-200">
                     <div>
@@ -298,6 +620,57 @@ export default function SettingsPage() {
                                 </div>
                             )}
                         </div>
+                    </div>
+                </div>
+
+                {/* Database Indexes Section */}
+                <div className="p-8 border-t border-slate-200">
+                    <div className="flex justify-between items-start mb-6">
+                        <div>
+                            <h2 className="text-xl font-bold text-slate-800 mb-2 flex items-center">
+                                <Database className="w-5 h-5 mr-2 text-blue-600" />
+                                ตัวช่วยสร้าง Database Index (ดัชนีฐานข้อมูล)
+                            </h2>
+                            <p className="text-sm text-slate-500">
+                                ตรวจสอบและสร้าง Index เพื่อให้การค้นหาเรียงลำดับเอกสาร PO/VO ในหน้าแอปพลิเคชันทำงานได้ถูกต้อง
+                            </p>
+                        </div>
+                        <button
+                            type="button"
+                            onClick={checkIndexes}
+                            className="inline-flex items-center px-4 py-2 border border-slate-300 rounded-lg text-sm font-medium bg-white text-slate-700 hover:bg-slate-50 shadow-sm transition-colors"
+                        >
+                            <RefreshCw className="w-4 h-4 mr-2" />
+                            ตรวจสอบ
+                        </button>
+                    </div>
+
+                    <div className="space-y-4">
+                        {indexStatuses.map((idxStat, i) => (
+                            <div key={i} className="flex flex-col sm:flex-row sm:items-center justify-between p-4 bg-slate-50 border border-slate-200 rounded-lg">
+                                <div className="mb-2 sm:mb-0">
+                                    <h4 className="font-semibold text-slate-800 text-sm">{idxStat.name}</h4>
+                                    {idxStat.status === 'idle' && <p className="text-xs text-slate-500 mt-1">กดปุ่มตรวจสอบเพื่อเช็คสถานะ</p>}
+                                    {idxStat.status === 'loading' && <p className="text-xs text-blue-500 mt-1 flex items-center"><Loader2 className="w-3 h-3 mr-1 animate-spin" /> กำลังตรวจสอบ...</p>}
+                                    {idxStat.status === 'error' && <p className="text-xs text-red-500 mt-1">เกิดข้อผิดพลาด: {idxStat.errorMsg}</p>}
+                                    {idxStat.status === 'ready' && <p className="text-xs text-green-600 mt-1 flex items-center"><CheckCircle className="w-3 h-3 mr-1" /> พร้อมใช้งาน</p>}
+                                    {idxStat.status === 'missing' && <p className="text-xs text-orange-500 mt-1 flex items-center"><ShieldAlert className="w-3 h-3 mr-1" /> พบว่ายังไม่มี Index นี้ในระบบ</p>}
+                                </div>
+                                <div className="flex items-center">
+                                    {idxStat.status === 'missing' && idxStat.link && (
+                                        <a
+                                            href={idxStat.link}
+                                            target="_blank"
+                                            rel="noreferrer"
+                                            className="inline-flex items-center px-3 py-1.5 bg-orange-100 text-orange-700 hover:bg-orange-200 rounded-lg text-sm font-semibold transition-colors"
+                                        >
+                                            <ExternalLink className="w-4 h-4 mr-1.5" />
+                                            คลิกเพื่อสร้าง Index
+                                        </a>
+                                    )}
+                                </div>
+                            </div>
+                        ))}
                     </div>
                 </div>
 

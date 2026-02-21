@@ -21,10 +21,27 @@ export default function VODetailPage({ params }: { params: Promise<{ id: string 
     const [actionLoading, setActionLoading] = useState(false);
     const [deleting, setDeleting] = useState(false);
 
+    const [companySettings, setCompanySettings] = useState({
+        name: "บริษัท พาวเวอร์เทค เอนจิเนียริ่ง จำกัด",
+        address: "9/10 ถ.มิตรสาร ต.ประตูชัย อ.พระนครศรีอยุธยา จ.พระนครศรีอยุธยา 13000",
+        phone: "083-995-5629, 083-995-4495",
+        email: "Powertec.civil@gmail.com",
+        logoUrl: "",
+        signatureUrl: "",
+        signatures: [] as any[]
+    });
+
     useEffect(() => {
-        async function fetchVO() {
+        async function fetchSettingsAndVO() {
             if (!resolvedParams.id) return;
             try {
+                // Fetch Settings
+                const configRef = doc(db, "system_settings", "global_config");
+                const configSnap = await getDoc(configRef);
+                if (configSnap.exists() && configSnap.data().companySettings) {
+                    setCompanySettings(configSnap.data().companySettings);
+                }
+
                 const docRef = doc(db, "variation_orders", resolvedParams.id);
                 const docSnap = await getDoc(docRef);
 
@@ -34,12 +51,12 @@ export default function VODetailPage({ params }: { params: Promise<{ id: string 
                     console.error("No such document!");
                 }
             } catch (error) {
-                console.error("Error fetching VO:", error);
+                console.error("Error fetching data:", error);
             } finally {
                 setLoading(false);
             }
         }
-        fetchVO();
+        fetchSettingsAndVO();
     }, [resolvedParams.id]);
 
     const handleStatusUpdate = async (newStatus: "approved" | "rejected") => {
@@ -197,17 +214,22 @@ export default function VODetailPage({ params }: { params: Promise<{ id: string 
                 <div className="p-8 space-y-8 print:p-0">
 
                     {/* Header Info */}
-                    <div className="flex justify-between items-start border-b border-slate-200 pb-6 print:pb-4">
-                        <div>
-                            <h2 className="text-xl font-bold text-slate-800">VARIATION ORDER</h2>
-                            <p className="text-slate-500 text-sm mt-1">ใบสั่งเปลี่ยนแปลงงาน (งานเพิ่ม-ลด)</p>
+                    <div className="flex flex-col md:flex-row justify-between items-start border-b border-slate-200 pb-6 print:pb-4 gap-4">
+                        <div className="flex items-center gap-4">
+                            {companySettings.logoUrl ? (
+                                <img src={companySettings.logoUrl} alt="Logo" className="h-16 w-16 object-contain hidden print:block" />
+                            ) : null}
+                            <div>
+                                <h2 className="text-xl font-bold text-slate-800">VARIATION ORDER</h2>
+                                <p className="text-slate-500 text-sm mt-1">ใบสั่งเปลี่ยนแปลงงาน (งานเพิ่ม-ลด)</p>
+                            </div>
                         </div>
                         <div className="text-right">
                             <h3 className="text-lg font-semibold text-orange-600">{vo.voNumber}</h3>
                             <p className="text-sm text-slate-500 mt-1">
                                 วันที่สร้าง: {(vo.createdAt as any)?.toDate().toLocaleDateString('th-TH') || 'N/A'}
                             </p>
-                            <div className="mt-2">
+                            <div className="mt-2 print:hidden">
                                 <span className={`px-2 py-1 inline-flex text-xs leading-5 font-semibold rounded-full ${vo.status === 'approved' ? 'bg-green-100 text-green-800' :
                                     vo.status === 'rejected' ? 'bg-red-100 text-red-800' :
                                         vo.status === 'pending' ? 'bg-orange-100 text-orange-800' :
@@ -293,6 +315,48 @@ export default function VODetailPage({ params }: { params: Promise<{ id: string 
                                 <span className={`font-bold ${vo.totalAmount > 0 ? 'text-red-600' : vo.totalAmount < 0 ? 'text-green-600' : 'text-slate-900'}`}>
                                     {vo.totalAmount > 0 ? '+' : ''}฿ {vo.totalAmount?.toLocaleString(undefined, { minimumFractionDigits: 2 })}
                                 </span>
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* Signatures */}
+                    <div className="hidden print:block mt-8 pt-8 border-t border-slate-200">
+                        <div className="grid grid-cols-1 md:grid-cols-2 print:grid-cols-2 text-[11px] font-semibold mt-4">
+                            <div></div>
+                            <div className="text-center space-y-12 w-full max-w-[400px] ml-auto">
+                                <div className="-ml-10">
+                                    {companySettings.name} หวังว่าท่านจะได้รับความไว้วางใจให้ดำเนินการ และขอ ขอบคุณมาณ โอกาสนี้<br />
+                                    <span className="font-bold">ด้วยความนับถือ</span>
+                                </div>
+                                <div className="flex justify-center gap-8 -ml-10 flex-wrap">
+                                    {companySettings.signatures && companySettings.signatures.length > 0 ? (
+                                        companySettings.signatures.map((sig) => (
+                                            <div key={sig.id} className="space-y-1 flex flex-col items-center">
+                                                {sig.signatureUrl ? (
+                                                    <div className="h-12 w-32 border-b border-black mb-1 flex items-end justify-center">
+                                                        <img src={sig.signatureUrl} alt="Signature" className="max-h-full max-w-full object-contain" />
+                                                    </div>
+                                                ) : (
+                                                    <p className="mb-2 text-slate-300 print:text-black">...........................................................</p>
+                                                )}
+                                                <p>{sig.name || "( ................................................ )"}</p>
+                                                <p className="font-bold text-xs mt-1">{sig.position || "ตำแหน่ง..............................."}</p>
+                                            </div>
+                                        ))
+                                    ) : (
+                                        <div className="space-y-1 flex flex-col items-center">
+                                            {companySettings.signatureUrl ? (
+                                                <div className="h-12 w-32 border-b border-black mb-1 flex items-end justify-center">
+                                                    <img src={companySettings.signatureUrl} alt="Signature" className="max-h-full max-w-full object-contain" />
+                                                </div>
+                                            ) : (
+                                                <p className="mb-2 text-slate-300 print:text-black">...........................................................</p>
+                                            )}
+                                            <p>( นายองศิลป์ วิริยะสัญญา )</p>
+                                            <p className="font-bold text-xs mt-1">ผู้จัดการ</p>
+                                        </div>
+                                    )}
+                                </div>
                             </div>
                         </div>
                     </div>

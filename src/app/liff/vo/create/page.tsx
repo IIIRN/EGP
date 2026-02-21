@@ -89,7 +89,23 @@ export default function LiffCreateVOPage() {
                 updatedAt: serverTimestamp(),
             };
 
-            await addDoc(collection(db, "variation_orders"), newVO);
+            const docRef = await addDoc(collection(db, "variation_orders"), newVO);
+
+            if (status === "pending") {
+                try {
+                    await fetch("/api/line/notify", {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({
+                            type: "VO",
+                            data: { ...newVO, id: docRef.id },
+                            projectName: currentProject.name
+                        })
+                    });
+                } catch (e) {
+                    console.error("Line notification failed:", e);
+                }
+            }
 
             setSuccess(true);
             setTimeout(() => {

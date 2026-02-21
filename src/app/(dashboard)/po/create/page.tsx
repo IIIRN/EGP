@@ -6,7 +6,7 @@ import Link from "next/link";
 import { useState, useEffect } from "react";
 import { POItem } from "@/types/po";
 import { useAuth } from "@/context/AuthContext";
-import { collection, addDoc, serverTimestamp, query, where, getDocs } from "firebase/firestore";
+import { collection, addDoc, serverTimestamp, query, where, getDocs, doc, getDoc } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { useRouter } from "next/navigation";
 import { Vendor } from "@/types/vendor";
@@ -25,6 +25,16 @@ export default function CreatePOPage() {
     const [vatRate, setVatRate] = useState(7); // Default 7% VAT
     const [saving, setSaving] = useState(false);
     const [success, setSuccess] = useState(false);
+    const [creditDays, setCreditDays] = useState(30);
+    const [poNumber, setPoNumber] = useState("");
+
+    const [companySettings, setCompanySettings] = useState<any>(null);
+    const [selectedSignatureId, setSelectedSignatureId] = useState("");
+
+    useEffect(() => {
+        const generated = `PO-${new Date().getFullYear()}${(new Date().getMonth() + 1).toString().padStart(2, '0')}-${Math.floor(Math.random() * 1000).toString().padStart(3, '0')}`;
+        setPoNumber(generated);
+    }, []);
 
     // Vendor Search State
     const [searchVendor, setSearchVendor] = useState("");
@@ -49,7 +59,26 @@ export default function CreatePOPage() {
                 console.error("Error fetching vendors:", error);
             }
         }
+
+        async function fetchCompanySettings() {
+            try {
+                const configRef = doc(db, "system_settings", "global_config");
+                const configSnap = await getDoc(configRef);
+                if (configSnap.exists() && configSnap.data().companySettings) {
+                    const settings = configSnap.data().companySettings;
+                    setCompanySettings(settings);
+                    // auto-select first signature if available
+                    if (settings.signatures && settings.signatures.length > 0) {
+                        setSelectedSignatureId(settings.signatures[0].id);
+                    }
+                }
+            } catch (error) {
+                console.error("Error fetching company settings:", error);
+            }
+        }
+
         fetchVendors();
+        fetchCompanySettings();
     }, []);
 
     const handleAddItem = () => {
@@ -97,11 +126,14 @@ export default function CreatePOPage() {
             return;
         }
 
+        if (!poNumber.trim()) {
+            alert("กรุณาระบุเลขที่ใบสั่งซื้อ (PO Number)");
+            return;
+        }
+
         setSaving(true);
 
         try {
-            const generatePoNumber = `PO-${new Date().getFullYear()}${(new Date().getMonth() + 1).toString().padStart(2, '0')}-${Math.floor(Math.random() * 1000).toString().padStart(3, '0')}`;
-
             const selectedVendor = vendors.find(v => v.id === vendorId);
 
             const sanitizedItems = items.map(item => ({
@@ -116,8 +148,13 @@ export default function CreatePOPage() {
             // In some cases userProfile isn't set depending on database state, so use primary firebase user uid
             const createdByUid = userProfile?.uid || user.uid;
 
+            let signatureData = null;
+            if (companySettings?.signatures && selectedSignatureId) {
+                signatureData = companySettings.signatures.find((s: any) => s.id === selectedSignatureId) || null;
+            }
+
             const newPO = {
-                poNumber: generatePoNumber,
+                poNumber: poNumber.trim(),
                 projectId: currentProject.id,
                 vendorId: vendorId || "unknown",
                 vendorName: selectedVendor ? selectedVendor.name : "ไม่ระบุผู้ขาย",
@@ -127,12 +164,32 @@ export default function CreatePOPage() {
                 vatAmount,
                 totalAmount,
                 status: status,
+                creditDays: creditDays,
+                signatureId: selectedSignatureId,
+                signatureData: signatureData,
                 createdBy: createdByUid,
                 createdAt: serverTimestamp(),
                 updatedAt: serverTimestamp(),
             };
 
-            await addDoc(collection(db, "purchase_orders"), newPO);
+            const docRef = await addDoc(collection(db, "purchase_orders"), newPO);
+
+            if (status === "pending") {
+                try {
+                    await fetch("/api/line/notify", {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({
+                            type: "PO",
+                            data: { ...newPO, id: docRef.id },
+                            vendorData: selectedVendor,
+                            projectName: currentProject.name
+                        })
+                    });
+                } catch (e) {
+                    console.error("Line notification failed:", e);
+                }
+            }
 
             setSuccess(true);
             setTimeout(() => {
@@ -199,6 +256,17 @@ export default function CreatePOPage() {
                 <div className="p-6 space-y-8">
 
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        <div>
+                            <label className="block text-sm font-medium text-slate-700 mb-1">เลขที่ใบสั่งซื้อ (PO Number) <span className="text-red-500">*</span></label>
+                            <input
+                                type="text"
+                                value={poNumber}
+                                onChange={(e) => setPoNumber(e.target.value)}
+                                className="w-full border border-slate-300 rounded-lg py-2 px-3 text-sm focus:ring-blue-500 focus:border-blue-500 bg-white"
+                                placeholder="PO-XXXXXX-XXX"
+                            />
+                        </div>
+
                         <div className="relative">
                             <label className="block text-sm font-medium text-slate-700 mb-1">ผู้ขาย / คู่ค้า <span className="text-red-500">*</span></label>
 
@@ -262,7 +330,7 @@ export default function CreatePOPage() {
                             {showVendorDropdown && <div className="fixed z-40 hidden"></div>}
                         </div>
 
-                        <div className="grid grid-cols-2 gap-4">
+                        <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mt-6">
                             <div>
                                 <label className="block text-sm font-medium text-slate-700 mb-1">วันที่</label>
                                 <input type="date" className="w-full border border-slate-300 rounded-lg py-2 px-3 text-sm text-slate-600 focus:ring-blue-500 focus:border-blue-500" />
@@ -270,6 +338,32 @@ export default function CreatePOPage() {
                             <div>
                                 <label className="block text-sm font-medium text-slate-700 mb-1">วันที่กำหนดส่ง</label>
                                 <input type="date" className="w-full border border-slate-300 rounded-lg py-2 px-3 text-sm text-slate-600 focus:ring-blue-500 focus:border-blue-500" />
+                            </div>
+                            <div>
+                                <label className="block text-sm font-medium text-slate-700 mb-1">เครดิต (วัน)</label>
+                                <input
+                                    type="number"
+                                    value={creditDays}
+                                    onChange={(e) => setCreditDays(Number(e.target.value))}
+                                    className="w-full border border-slate-300 rounded-lg py-2 px-3 text-sm text-slate-600 focus:ring-blue-500 focus:border-blue-500"
+                                    min="0"
+                                    placeholder="30"
+                                />
+                            </div>
+                            <div>
+                                <label className="block text-sm font-medium text-slate-700 mb-1">เลือกลายเซ็น</label>
+                                <select
+                                    value={selectedSignatureId}
+                                    onChange={(e) => setSelectedSignatureId(e.target.value)}
+                                    className="w-full border border-slate-300 rounded-lg py-2 px-3 text-sm focus:ring-blue-500 focus:border-blue-500 bg-white"
+                                >
+                                    <option value="">ไม่ระบุลายเซ็น</option>
+                                    {companySettings?.signatures?.map((sig: any) => (
+                                        <option key={sig.id} value={sig.id}>
+                                            {sig.name} ({sig.position})
+                                        </option>
+                                    ))}
+                                </select>
                             </div>
                         </div>
                     </div>

@@ -9,7 +9,7 @@ interface HeaderProps {
 
 export default function Header({ toggleSidebar }: HeaderProps) {
     return (
-        <header className="h-16 bg-white border-b border-slate-200 flex items-center justify-between px-4 md:px-6 shadow-sm z-10 print:hidden relative">
+        <header className="h-16 bg-white border-b border-slate-200 flex items-center justify-between px-4 md:px-6 shadow-sm z-40 print:hidden relative">
 
             {/* Left section: Hamburger & Project Selection */}
             <div className="flex items-center space-x-3">

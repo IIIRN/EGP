@@ -7,26 +7,45 @@ export async function POST(request: Request) {
         const { type, docId, data, vendorData, projectName } = body;
 
         // Fetch LINE Settings
-        const settingsDoc = await adminDb.collection("system_settings").doc("line_integration").get();
+        const settingsDoc = await adminDb.collection("system_settings").doc("global_config").get();
         if (!settingsDoc.exists) {
             return NextResponse.json({ success: false, message: "LINE settings not found" });
         }
 
-        const settings = settingsDoc.data();
+        const settings = settingsDoc.data()?.lineIntegration;
         if (!settings?.isEnabled || !settings?.lineToken) {
             return NextResponse.json({ success: false, message: "LINE integration is disabled or token missing" });
         }
 
-        const targetId = settings.groupId || settings.userId;
+        let targetId = settings.groupId || settings.userId;
+
+        // Find requester's LINE ID
+        let requesterLineId = null;
+        if (data?.createdBy) {
+            const userDoc = await adminDb.collection("users").doc(data.createdBy).get();
+            if (userDoc.exists) {
+                requesterLineId = userDoc.data()?.lineUserId;
+            }
+        }
+
+        // If an approval notification, prioritize sending to the requester directly
+        if (data?.status === "approved" && requesterLineId) {
+            targetId = requesterLineId;
+        }
+
         if (!targetId) {
             return NextResponse.json({ success: false, message: "No target LINE ID configured" });
         }
 
         let flexContents: any = {};
         let altText = "";
+        const liffId = process.env.NEXT_PUBLIC_LIFF_ID || "";
+        const approveUrl = `https://liff.line.me/${liffId}/approve?type=${type}&id=${data.id}`;
+
+        const isPending = data?.status === "pending";
 
         if (type === "PO") {
-            altText = `🎉 อนุมัติใบสั่งซื้อ (PO) เรียบร้อย: ${data.poNumber}`;
+            altText = isPending ? `⚠️ ขออนุมัติใบสั่งซื้อ (PO): ${data.poNumber}` : `🎉 อนุมัติใบสั่งซื้อ (PO) เรียบร้อย: ${data.poNumber}`;
             flexContents = {
                 type: "bubble",
                 size: "mega",
@@ -34,10 +53,10 @@ export async function POST(request: Request) {
                     type: "box",
                     layout: "vertical",
                     contents: [
-                        { type: "text", text: "✅ อนุมัติใบสั่งซื้อสำเร็จ", weight: "bold", color: "#FFFFFF", size: "lg" },
+                        { type: "text", text: isPending ? "⚠️ รออนุมัติใบสั่งซื้อ" : "✅ อนุมัติใบสั่งซื้อสำเร็จ", weight: "bold", color: "#FFFFFF", size: "lg" },
                         { type: "text", text: projectName || "ไม่ระบุโครงการ", color: "#FFFFFFcc", size: "sm", margin: "sm" }
                     ],
-                    backgroundColor: "#10b981",
+                    backgroundColor: isPending ? "#f59e0b" : "#10b981",
                     paddingAll: "xxl"
                 },
                 body: {
@@ -66,9 +85,15 @@ export async function POST(request: Request) {
                     layout: "horizontal",
                     spacing: "sm",
                     contents: [
-                        ...(vendorData?.phone ? [{
+                        ...(isPending && liffId ? [{
                             type: "button",
                             style: "primary",
+                            color: "#10b981",
+                            action: { type: "uri", label: "✅ อนุมัติเลย", uri: approveUrl }
+                        }] : []),
+                        ...(vendorData?.phone ? [{
+                            type: "button",
+                            style: "secondary",
                             color: "#3b82f6",
                             action: { type: "uri", label: "📞 โทรออก", uri: `tel:${vendorData.phone}` }
                         }] : []),
@@ -81,7 +106,7 @@ export async function POST(request: Request) {
                 }
             };
         } else if (type === "VO") {
-            altText = `🎉 อนุมัติงานเพิ่ม-ลด (VO) เรียบร้อย: ${data.voNumber}`;
+            altText = isPending ? `⚠️ ขออนุมัติงานเพิ่ม-ลด (VO): ${data.voNumber}` : `🎉 อนุมัติงานเพิ่ม-ลด (VO) เรียบร้อย: ${data.voNumber}`;
             flexContents = {
                 type: "bubble",
                 size: "mega",
@@ -89,10 +114,10 @@ export async function POST(request: Request) {
                     type: "box",
                     layout: "vertical",
                     contents: [
-                        { type: "text", text: "✅ อนุมัติงานเพิ่ม-ลด (VO)", weight: "bold", color: "#FFFFFF", size: "lg" },
+                        { type: "text", text: isPending ? "⚠️ รออนุมัติงานเพิ่ม-ลด (VO)" : "✅ อนุมัติงานเพิ่ม-ลด (VO)", weight: "bold", color: "#FFFFFF", size: "lg" },
                         { type: "text", text: projectName || "ไม่ระบุโครงการ", color: "#FFFFFFcc", size: "sm", margin: "sm" }
                     ],
-                    backgroundColor: "#f59e0b",
+                    backgroundColor: isPending ? "#f59e0b" : "#3b82f6",
                     paddingAll: "xxl"
                 },
                 body: {
@@ -110,7 +135,19 @@ export async function POST(request: Request) {
                             margin: "sm"
                         }
                     ]
-                }
+                },
+                footer: isPending && liffId ? {
+                    type: "box",
+                    layout: "horizontal",
+                    contents: [
+                        {
+                            type: "button",
+                            style: "primary",
+                            color: "#10b981",
+                            action: { type: "uri", label: "✅ อนุมัติเลย", uri: approveUrl }
+                        }
+                    ]
+                } : undefined
             };
         }
 

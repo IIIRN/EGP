@@ -8,6 +8,7 @@ import { useAuth } from "./AuthContext";
 
 interface ProjectContextType {
     projects: Project[];
+    allProjects: Project[];
     currentProject: Project | null;
     setCurrentProject: (project: Project | null) => void;
     loading: boolean;
@@ -15,6 +16,7 @@ interface ProjectContextType {
 
 const ProjectContext = createContext<ProjectContextType>({
     projects: [],
+    allProjects: [],
     currentProject: null,
     setCurrentProject: () => { },
     loading: true,
@@ -25,12 +27,14 @@ export const useProject = () => useContext(ProjectContext);
 export function ProjectProvider({ children }: { children: React.ReactNode }) {
     const { user } = useAuth();
     const [projects, setProjects] = useState<Project[]>([]);
+    const [allProjects, setAllProjects] = useState<Project[]>([]);
     const [currentProject, setCurrentProject] = useState<Project | null>(null);
     const [loading, setLoading] = useState(true);
 
     useEffect(() => {
         if (!user) {
             setProjects([]);
+            setAllProjects([]);
             setCurrentProject(null);
             setLoading(false);
             return;
@@ -41,19 +45,24 @@ export function ProjectProvider({ children }: { children: React.ReactNode }) {
         const q = query(collection(db, "projects"), orderBy("createdAt", "desc"));
 
         const unsubscribe = onSnapshot(q, (snapshot) => {
-            const projectData: Project[] = [];
+            let projectData: Project[] = [];
             snapshot.forEach((doc) => {
                 projectData.push({ id: doc.id, ...doc.data() } as Project);
             });
 
-            setProjects(projectData);
+            setAllProjects(projectData);
+
+            // Hide completed projects for the active selector
+            const activeProjects = projectData.filter(p => p.status !== "completed");
+
+            setProjects(activeProjects);
 
             // Auto-select the first project if no project is currently selected
-            if (projectData.length > 0) {
+            if (activeProjects.length > 0) {
                 setCurrentProject((prev) => {
-                    if (!prev) return projectData[0];
-                    const exists = projectData.find(p => p.id === prev.id);
-                    return exists || projectData[0];
+                    if (!prev) return activeProjects[0];
+                    const exists = activeProjects.find(p => p.id === prev.id);
+                    return exists || activeProjects[0];
                 });
             } else {
                 setCurrentProject(null);
@@ -66,7 +75,7 @@ export function ProjectProvider({ children }: { children: React.ReactNode }) {
     }, [user]);
 
     return (
-        <ProjectContext.Provider value={{ projects, currentProject, setCurrentProject, loading }}>
+        <ProjectContext.Provider value={{ projects, allProjects, currentProject, setCurrentProject, loading }}>
             {children}
         </ProjectContext.Provider>
     );

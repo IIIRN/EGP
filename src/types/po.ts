@@ -22,4 +22,7 @@ export interface PurchaseOrder {
     createdBy: string;
     createdAt?: string;
     updatedAt?: string;
+    creditDays?: number;
+    signatureId?: string;
+    signatureData?: any;
 }

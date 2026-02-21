@@ -4,7 +4,7 @@ import { useAuth } from "@/context/AuthContext";
 import { useProject } from "@/context/ProjectContext";
 import { db } from "@/lib/firebase";
 import { collection, query, where, orderBy, onSnapshot, doc, getDoc } from "firebase/firestore";
-import { FileText, FileEdit, Phone, MapPin, Search, ChevronRight, Loader2, Info, Store } from "lucide-react";
+import { FileText, FileEdit, Phone, MapPin, Search, ChevronRight, Loader2, Info, Store, ChevronDown } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { PurchaseOrder } from "@/types/po";
@@ -19,15 +19,23 @@ interface POWithVendor extends PurchaseOrder {
 }
 
 export default function LiffDashboard() {
-    const { user } = useAuth();
-    const { currentProject } = useProject();
+    const { user, userProfile } = useAuth();
+    const { currentProject, projects, setCurrentProject } = useProject();
 
     const [activeTab, setActiveTab] = useState<"PO" | "VO" | "Vendors">("PO");
     const [pos, setPos] = useState<POWithVendor[]>([]);
     const [vos, setVos] = useState<VariationOrder[]>([]);
     const [vendors, setVendors] = useState<Vendor[]>([]);
+    const [vendorSearch, setVendorSearch] = useState("");
     const [loading, setLoading] = useState(true);
     const [liffInitialized, setLiffInitialized] = useState(false);
+
+    const filteredVendors = vendors.filter(v =>
+        v.name.toLowerCase().includes(vendorSearch.toLowerCase()) ||
+        (v.taxId && v.taxId.includes(vendorSearch)) ||
+        (v.contactName && v.contactName.toLowerCase().includes(vendorSearch.toLowerCase())) ||
+        (v.vendorTypes && v.vendorTypes.some(t => t.toLowerCase().includes(vendorSearch.toLowerCase())))
+    );
 
     // defaults to true unless explicitly false in .env
     const isDevMode = process.env.NEXT_PUBLIC_SHOW_DEV_MODE !== "false";
@@ -180,35 +188,57 @@ export default function LiffDashboard() {
             {/* Mobile Header */}
             <div className="bg-blue-600 text-white p-4 pt-8 rounded-b-3xl shadow-md sticky top-0 z-40">
                 <div className="flex justify-between items-center mb-4">
-                    <div>
+                    <div className="flex-1 max-w-[80%] pr-4">
                         <div className="flex items-center space-x-2">
                             <h1 className="text-xl font-bold">โครงการปัจจุบัน</h1>
                             {isDevMode && (
                                 <span className="bg-white/20 text-white text-[10px] px-2 py-0.5 rounded-full border border-white/30 backdrop-blur-sm">DEV MODE</span>
                             )}
                         </div>
-                        <p className="opacity-90 text-sm truncate w-64">{currentProject.name}</p>
+                        <div className="relative mt-1">
+                            <select
+                                className="w-full bg-white/20 text-white border border-white/20 rounded-lg py-1.5 pl-3 pr-8 text-sm outline-none focus:ring-2 focus:ring-white/50 appearance-none font-semibold truncate"
+                                value={currentProject.id}
+                                onChange={(e) => {
+                                    const selected = projects.find(p => p.id === e.target.value);
+                                    if (selected) {
+                                        setCurrentProject(selected);
+                                    }
+                                }}
+                            >
+                                {projects.map(p => (
+                                    <option key={p.id} value={p.id} className="text-slate-900 bg-white">
+                                        {p.name}
+                                    </option>
+                                ))}
+                            </select>
+                            <ChevronDown size={16} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-white pointer-events-none" />
+                        </div>
                     </div>
                     {/* User Profile Thumbnail */}
-                    <div className="flex flex-col items-center">
-                        <div className="w-10 h-10 bg-white/20 rounded-full flex items-center justify-center backdrop-blur-sm border border-white/30 font-bold mb-1">
-                            {user?.email?.charAt(0).toUpperCase()}
+                    <div className="flex flex-col items-center shrink-0 ml-2">
+                        <div className="w-11 h-11 bg-white/20 rounded-full flex items-center justify-center backdrop-blur-sm border border-white/30 font-bold overflow-hidden shadow-sm">
+                            {userProfile?.lineProfilePic ? (
+                                <img src={userProfile.lineProfilePic} alt="Profile" className="w-full h-full object-cover" />
+                            ) : (
+                                user?.email?.charAt(0).toUpperCase()
+                            )}
                         </div>
                     </div>
                 </div>
 
                 {/* Quick Actions */}
-                <div className="flex gap-2 mb-4">
-                    <Link href="/liff/po/create" className="flex-1 flex justify-center items-center py-2 bg-white/10 hover:bg-white/20 rounded-xl text-sm font-semibold transition-colors border border-white/20 backdrop-blur-sm">
-                        <span className="bg-white text-blue-600 w-5 h-5 rounded-full flex items-center justify-center mr-2 text-lg leading-none pb-0.5">+</span>
+                <div className="flex gap-2 mb-3">
+                    <Link href="/liff/po/create" className="flex-1 flex justify-center items-center py-1.5 px-1 bg-white/10 hover:bg-white/20 rounded-xl text-[11px] sm:text-xs font-semibold transition-colors border border-white/20 backdrop-blur-sm">
+                        <span className="bg-white text-blue-600 w-3.5 h-3.5 sm:w-4 sm:h-4 rounded-full flex items-center justify-center mr-1 text-sm leading-none pb-0.5">+</span>
                         สร้าง PO
                     </Link>
-                    <Link href="/liff/vo/create" className="flex-1 flex justify-center items-center py-2 bg-white/10 hover:bg-white/20 rounded-xl text-sm font-semibold transition-colors border border-white/20 backdrop-blur-sm">
-                        <span className="bg-white text-blue-600 w-5 h-5 rounded-full flex items-center justify-center mr-2 text-lg leading-none pb-0.5">+</span>
+                    <Link href="/liff/vo/create" className="flex-1 flex justify-center items-center py-1.5 px-1 bg-white/10 hover:bg-white/20 rounded-xl text-[11px] sm:text-xs font-semibold transition-colors border border-white/20 backdrop-blur-sm">
+                        <span className="bg-white text-blue-600 w-3.5 h-3.5 sm:w-4 sm:h-4 rounded-full flex items-center justify-center mr-1 text-sm leading-none pb-0.5">+</span>
                         สร้าง VO
                     </Link>
-                    <Link href="/liff/vendors/create" className="flex-1 flex justify-center items-center py-2 bg-white/10 hover:bg-white/20 rounded-xl text-sm font-semibold transition-colors border border-white/20 backdrop-blur-sm">
-                        <span className="bg-white text-blue-600 w-5 h-5 rounded-full flex items-center justify-center mr-2 text-lg leading-none pb-0.5">+</span>
+                    <Link href="/liff/vendors/create" className="flex-1 flex justify-center items-center py-1.5 px-1 bg-white/10 hover:bg-white/20 rounded-xl text-[11px] sm:text-xs font-semibold transition-colors border border-white/20 backdrop-blur-sm">
+                        <span className="bg-white text-blue-600 w-3.5 h-3.5 sm:w-4 sm:h-4 rounded-full flex items-center justify-center mr-1 text-sm leading-none pb-0.5">+</span>
                         เพิ่มคู่ค้า
                     </Link>
                 </div>
@@ -217,23 +247,23 @@ export default function LiffDashboard() {
                 <div className="flex bg-white/20 p-1 rounded-full backdrop-blur-sm">
                     <button
                         onClick={() => setActiveTab("PO")}
-                        className={`flex-1 flex justify-center items-center py-2 text-sm font-semibold rounded-full transition-colors ${activeTab === 'PO' ? 'bg-white text-blue-600 shadow-sm' : 'text-white'}`}
+                        className={`flex-1 flex justify-center items-center py-1.5 text-[11px] sm:text-xs font-semibold rounded-full transition-colors ${activeTab === 'PO' ? 'bg-white text-blue-600 shadow-sm' : 'text-white'}`}
                     >
-                        <FileText size={16} className="mr-2" />
-                        ใบสั่งซื้อ (PO)
+                        <FileText size={14} className="mr-1" />
+                        PO
                     </button>
                     <button
                         onClick={() => setActiveTab("VO")}
-                        className={`flex-1 flex justify-center items-center py-2 text-sm font-semibold rounded-full transition-colors ${activeTab === 'VO' ? 'bg-white text-blue-600 shadow-sm' : 'text-white'}`}
+                        className={`flex-1 flex justify-center items-center py-1.5 text-[11px] sm:text-xs font-semibold rounded-full transition-colors ${activeTab === 'VO' ? 'bg-white text-blue-600 shadow-sm' : 'text-white'}`}
                     >
-                        <FileEdit size={16} className="mr-2" />
-                        เพิ่ม-ลด (VO)
+                        <FileEdit size={14} className="mr-1" />
+                        VO
                     </button>
                     <button
                         onClick={() => setActiveTab("Vendors")}
-                        className={`flex-1 flex justify-center items-center py-2 text-sm font-semibold rounded-full transition-colors ${activeTab === 'Vendors' ? 'bg-white text-blue-600 shadow-sm' : 'text-white'}`}
+                        className={`flex-1 flex justify-center items-center py-1.5 text-[11px] sm:text-xs font-semibold rounded-full transition-colors ${activeTab === 'Vendors' ? 'bg-white text-blue-600 shadow-sm' : 'text-white'}`}
                     >
-                        <Store size={16} className="mr-2" />
+                        <Store size={14} className="mr-1" />
                         คู่ค้า
                     </button>
                 </div>
@@ -324,7 +354,22 @@ export default function LiffDashboard() {
                 )}
 
                 {/* Vendors Content */}
-                {!loading && activeTab === 'Vendors' && vendors.map(v => (
+                {!loading && activeTab === 'Vendors' && (
+                    <div className="mb-4">
+                        <div className="relative">
+                            <Search className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
+                            <input
+                                type="text"
+                                placeholder="ค้นหาร้านค้า, ประเภท หรือบุคคลติดต่อ..."
+                                value={vendorSearch}
+                                onChange={(e) => setVendorSearch(e.target.value)}
+                                className="w-full pl-9 pr-3 py-2 text-sm border border-slate-200 bg-white focus:ring-blue-500 focus:border-blue-500 rounded-lg shadow-sm"
+                            />
+                        </div>
+                    </div>
+                )}
+
+                {!loading && activeTab === 'Vendors' && filteredVendors.map(v => (
                     <div key={v.id} className="bg-white p-4 rounded-2xl shadow-sm border border-slate-100">
                         <div className="flex justify-between items-start mb-1">
                             <span className="font-bold text-slate-800 text-lg line-clamp-1">{v.name}</span>
@@ -361,9 +406,9 @@ export default function LiffDashboard() {
                     </div>
                 ))}
 
-                {!loading && activeTab === 'Vendors' && vendors.length === 0 && (
+                {!loading && activeTab === 'Vendors' && filteredVendors.length === 0 && (
                     <div className="text-center text-slate-400 py-10">
-                        ไม่มีข้อมูลร้านค้าหรือคู่ค้า
+                        {vendorSearch ? "ไม่พบร้านค้าที่ตรงกับคำค้นหา" : "ไม่มีข้อมูลร้านค้าหรือคู่ค้า"}
                     </div>
                 )}
 

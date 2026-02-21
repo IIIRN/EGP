@@ -1,16 +1,17 @@
 "use client";
 
 import { useProject } from "@/context/ProjectContext";
-import { Plus, Search, FileText, ArrowRight, Eye } from "lucide-react";
+import { Plus, Search, FileText, ArrowRight, Eye, Trash2 } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { collection, query, where, onSnapshot, orderBy } from "firebase/firestore";
+import { collection, query, where, onSnapshot, orderBy, deleteDoc, doc } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { PurchaseOrder } from "@/types/po";
 
 export default function POListingPage() {
     const { currentProject } = useProject();
     const [pos, setPos] = useState<PurchaseOrder[]>([]);
+    const [usersMap, setUsersMap] = useState<Record<string, string>>({});
     const [loading, setLoading] = useState(true);
 
     useEffect(() => {
@@ -21,6 +22,17 @@ export default function POListingPage() {
         }
 
         setLoading(true);
+
+        // Fetch user mapping
+        const usersUnsubscribe = onSnapshot(collection(db, "users"), (snapshot) => {
+            const uMap: Record<string, string> = {};
+            snapshot.forEach(doc => {
+                const data = doc.data();
+                uMap[doc.id] = data.displayName || data.email || doc.id;
+            });
+            setUsersMap(uMap);
+        });
+
         const q = query(
             collection(db, "purchase_orders"),
             where("projectId", "==", currentProject.id),
@@ -47,7 +59,10 @@ export default function POListingPage() {
             setLoading(false);
         });
 
-        return () => unsubscribe();
+        return () => {
+            usersUnsubscribe();
+            unsubscribe();
+        };
     }, [currentProject]);
 
     const translatedStatus = (status: string) => {
@@ -57,6 +72,18 @@ export default function POListingPage() {
             case "approved": return { label: "อนุมัติแล้ว", color: "bg-green-100 text-green-800" };
             case "rejected": return { label: "ไม่อนุมัติ", color: "bg-red-100 text-red-800" };
             default: return { label: status, color: "bg-slate-100 text-slate-800" };
+        }
+    };
+
+    const handleDelete = async (poId: string, poNumber: string) => {
+        if (!window.confirm(`คุณแน่ใจหรือไม่ว่าต้องการลบใบสั่งซื้อ ${poNumber}? ข้อมูลจะไม่สามารถกู้คืนได้`)) {
+            return;
+        }
+        try {
+            await deleteDoc(doc(db, "purchase_orders", poId));
+        } catch (error) {
+            console.error("Error deleting PO:", error);
+            alert("เกิดข้อผิดพลาดในการลบใบสั่งซื้อ");
         }
     };
 
@@ -115,6 +142,9 @@ export default function POListingPage() {
                                 <th scope="col" className="px-6 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">
                                     ผู้ขาย / คู่ค้า
                                 </th>
+                                <th scope="col" className="px-6 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">
+                                    ผู้ทำเอกสาร
+                                </th>
                                 <th scope="col" className="px-6 py-3 text-right text-xs font-semibold text-slate-500 uppercase tracking-wider">
                                     ยอดสุทธิ (Total)
                                 </th>
@@ -129,13 +159,13 @@ export default function POListingPage() {
                         <tbody className="bg-white divide-y divide-slate-200">
                             {loading ? (
                                 <tr>
-                                    <td colSpan={6} className="px-6 py-8 text-center text-slate-500">
+                                    <td colSpan={7} className="px-6 py-8 text-center text-slate-500">
                                         กำลังโหลดข้อมูล...
                                     </td>
                                 </tr>
                             ) : pos.length === 0 ? (
                                 <tr>
-                                    <td colSpan={6} className="px-6 py-12 text-center flex-col items-center">
+                                    <td colSpan={7} className="px-6 py-12 text-center flex-col items-center">
                                         <FileText className="mx-auto h-12 w-12 text-slate-300" />
                                         <h3 className="mt-2 text-sm font-semibold text-slate-900">ไม่มีรายการใบสั่งซื้อ</h3>
                                         <p className="mt-1 text-sm text-slate-500">ยังไม่มีการสร้าง (PO) สำหรับโครงการนี้</p>
@@ -160,6 +190,9 @@ export default function POListingPage() {
                                             <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-900">
                                                 {po.vendorName}
                                             </td>
+                                            <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-600">
+                                                {usersMap[po.createdBy] || po.createdBy || "ไม่ระบุ"}
+                                            </td>
                                             <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-900 text-right font-medium">
                                                 {po.totalAmount ? `฿${po.totalAmount.toLocaleString(undefined, { minimumFractionDigits: 2 })}` : "฿0.00"}
                                             </td>
@@ -169,9 +202,18 @@ export default function POListingPage() {
                                                 </span>
                                             </td>
                                             <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                                                <Link href={`/po/${po.id}`} className="inline-flex text-slate-400 hover:text-blue-600 p-1.5 hover:bg-blue-50 rounded-lg transition-colors border border-transparent" title="ดูรายละเอียด">
-                                                    <Eye size={18} />
-                                                </Link>
+                                                <div className="flex items-center justify-end space-x-1">
+                                                    <Link href={`/po/${po.id}`} className="inline-flex text-slate-400 hover:text-blue-600 p-1.5 hover:bg-blue-50 rounded-lg transition-colors border border-transparent" title="ดูรายละเอียด">
+                                                        <Eye size={18} />
+                                                    </Link>
+                                                    <button
+                                                        onClick={() => handleDelete(po.id, po.poNumber)}
+                                                        className="inline-flex text-slate-400 hover:text-red-600 p-1.5 hover:bg-red-50 rounded-lg transition-colors border border-transparent"
+                                                        title="ลบเอกสาร"
+                                                    >
+                                                        <Trash2 size={18} />
+                                                    </button>
+                                                </div>
                                             </td>
                                         </tr>
                                     );

@@ -1,11 +1,21 @@
 "use client";
 
 import { useProject } from "@/context/ProjectContext";
-import { Building2, Plus, Search, Loader2 } from "lucide-react";
+import { Building2, Plus, Search, CheckCircle2 } from "lucide-react";
 import Link from "next/link";
+import { useState } from "react";
 
 export default function ProjectsPage() {
-    const { projects, loading } = useProject();
+    const { allProjects, loading } = useProject();
+    const [searchQuery, setSearchQuery] = useState("");
+    const [showCompleted, setShowCompleted] = useState(false);
+
+    const filteredProjects = allProjects.filter((project) => {
+        const matchesSearch = project.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+            project.code.toLowerCase().includes(searchQuery.toLowerCase());
+        const matchesStatus = showCompleted ? true : project.status !== "completed";
+        return matchesSearch && matchesStatus;
+    });
 
     const translatedStatus = (status: string) => {
         switch (status) {
@@ -35,15 +45,29 @@ export default function ProjectsPage() {
 
             <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
                 <div className="p-4 border-b border-slate-200 flex justify-between items-center bg-slate-50/50">
-                    <div className="relative max-w-sm w-full">
-                        <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                            <Search className="h-5 w-5 text-slate-400" />
+                    <div className="flex gap-4 items-center max-w-2xl w-full">
+                        <div className="relative flex-1">
+                            <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                                <Search className="h-5 w-5 text-slate-400" />
+                            </div>
+                            <input
+                                type="text"
+                                placeholder="ค้นหาชื่อโครงการ หรือรหัส..."
+                                value={searchQuery}
+                                onChange={(e) => setSearchQuery(e.target.value)}
+                                className="block w-full pl-10 pr-3 py-2 border border-slate-300 rounded-lg leading-5 bg-white placeholder-slate-500 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
+                            />
                         </div>
-                        <input
-                            type="text"
-                            placeholder="ค้นหาชื่อโครงการ หรือรหัส..."
-                            className="block w-full pl-10 pr-3 py-2 border border-slate-300 rounded-lg leading-5 bg-white placeholder-slate-500 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
-                        />
+                        <button
+                            onClick={() => setShowCompleted(!showCompleted)}
+                            className={`flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg border transition-colors ${showCompleted
+                                    ? "bg-slate-800 text-white border-slate-800 hover:bg-slate-700"
+                                    : "bg-white text-slate-700 border-slate-300 hover:bg-slate-50"
+                                }`}
+                        >
+                            <CheckCircle2 size={16} className={showCompleted ? "text-green-400" : "text-slate-400"} />
+                            แสดงงานที่เสร็จสิ้น
+                        </button>
                     </div>
                 </div>
 
@@ -75,16 +99,18 @@ export default function ProjectsPage() {
                                         กำลังโหลดข้อมูลโครงการ...
                                     </td>
                                 </tr>
-                            ) : projects.length === 0 ? (
+                            ) : filteredProjects.length === 0 ? (
                                 <tr>
                                     <td colSpan={5} className="px-6 py-12 text-center flex-col items-center">
                                         <Building2 className="mx-auto h-12 w-12 text-slate-300" />
                                         <h3 className="mt-2 text-sm font-semibold text-slate-900">ไม่มีโครงการ</h3>
-                                        <p className="mt-1 text-sm text-slate-500">เริ่มต้นใช้งานโดยการสร้างโครงการก่อสร้างใหม่</p>
+                                        <p className="mt-1 text-sm text-slate-500">
+                                            {searchQuery || !showCompleted ? "ไม่พบโครงการที่ตรงกับเงื่อนไข" : "เริ่มต้นใช้งานโดยการสร้างโครงการก่อสร้างใหม่"}
+                                        </p>
                                     </td>
                                 </tr>
                             ) : (
-                                projects.map((project) => (
+                                filteredProjects.map((project) => (
                                     <tr key={project.id} className="hover:bg-slate-50">
                                         <td className="px-6 py-4 whitespace-nowrap">
                                             <div className="text-sm font-medium text-slate-900">{project.name}</div>

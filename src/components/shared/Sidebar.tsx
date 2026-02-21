@@ -14,11 +14,13 @@ import {
     UserCog,
     X,
     User,
-    LogOut
+    LogOut,
+    LineChart
 } from "lucide-react";
 
 const navigation = [
     { name: "หน้าหลัก", href: "/dashboard", icon: LayoutDashboard },
+    { name: "รายงาน (Reports)", href: "/reports", icon: LineChart },
     { name: "โครงการ (Projects)", href: "/projects", icon: Building2 },
     { name: "ใบสั่งซื้อ (PO)", href: "/po", icon: FileText },
     { name: "งานเพิ่ม-ลด (VO)", href: "/vo", icon: FileEdit },
@@ -74,8 +76,7 @@ export default function Sidebar({ isOpen = false, setIsOpen }: SidebarProps) {
                 {/* Logo Area */}
                 <div className="h-16 flex items-center justify-between px-6 border-b border-slate-800">
                     <div className="flex items-center">
-                        <Building2 className="w-8 h-8 text-blue-500" />
-                        <span className="ml-3 text-lg font-bold tracking-wider text-slate-100">EGP<span className="text-blue-500">.SYSTEM</span></span>
+                        <span className="ml-3 text-lg font-bold tracking-wider text-slate-100">EGP<span className="text-blue-500">Powertec</span></span>
                     </div>
                     {/* Close button for mobile */}
                     <button
@@ -96,7 +97,7 @@ export default function Sidebar({ isOpen = false, setIsOpen }: SidebarProps) {
                                     key={item.name}
                                     href={item.href}
                                     className={clsx(
-                                        "group flex items-center px-3 py-2.5 text-sm font-medium rounded-lg transition-colors",
+                                        "group flex items-center px-3 py-3 text-sm font-medium rounded-lg transition-colors",
                                         isActive
                                             ? "bg-blue-600 text-white shadow-sm"
                                             : "text-slate-300 hover:bg-slate-800 hover:text-white"
