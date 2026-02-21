@@ -68,6 +68,13 @@ export default function LiffBindingPage() {
                 throw new Error(data.error || "ผูกบัญชีไม่สำเร็จ");
             }
 
+            // Automatically sign in if token was provided
+            if (data.customToken) {
+                const { signInWithCustomToken } = await import("firebase/auth");
+                const { auth } = await import("@/lib/firebase");
+                await signInWithCustomToken(auth, data.customToken);
+            }
+
             setSuccess(true);
         } catch (error: any) {
             setErrorMsg(error.message || "เกิดข้อผิดพลาดในการเชื่อมบัญชี");

@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { adminDb } from "@/lib/firebaseAdmin";
+import { adminDb, adminAuth } from "@/lib/firebaseAdmin";
 
 export async function POST(request: Request) {
     try {
@@ -44,7 +44,10 @@ export async function POST(request: Request) {
             updatedAt: new Date().toISOString(),
         });
 
-        return NextResponse.json({ success: true, uid: userDoc.id });
+        // 5. Create Custom Token for immediate login
+        const customToken = await adminAuth.createCustomToken(userDoc.id);
+
+        return NextResponse.json({ success: true, uid: userDoc.id, customToken });
     } catch (error: any) {
         console.error("Error binding LINE user:", error);
         return NextResponse.json({ error: error.message }, { status: 500 });

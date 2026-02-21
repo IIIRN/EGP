@@ -42,16 +42,41 @@ export default function LiffDashboard() {
 
     useEffect(() => {
         const initLiff = async () => {
-            if (isDevMode) {
+            const isLiffBrowser = typeof window !== "undefined" && /Line/i.test(navigator.userAgent);
+
+            if (isDevMode && !isLiffBrowser) {
                 setLiffInitialized(true);
                 return;
             }
+
             try {
                 await liff.init({ liffId: process.env.NEXT_PUBLIC_LIFF_ID || "1234567890-AbcdEfgh" });
                 if (!liff.isLoggedIn()) {
                     liff.login({ redirectUri: window.location.href });
                     return;
                 }
+
+                // Get LINE Profile and login to Firebase
+                const profile = await liff.getProfile();
+
+                // Even if we already have Firebase user, it's safer to ensure the correct user is signed in
+                const res = await fetch("/api/auth/line-login", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ lineUserId: profile.userId })
+                });
+
+                if (res.ok) {
+                    const data = await res.json();
+                    if (data.customToken && data.success) {
+                        const { signInWithCustomToken } = await import("firebase/auth");
+                        const { auth } = await import("@/lib/firebase");
+                        await signInWithCustomToken(auth, data.customToken);
+                    }
+                } else {
+                    console.log("LINE userId is not registered to any user.");
+                }
+
                 setLiffInitialized(true);
             } catch (err) {
                 console.error("LIFF Init Error:", err);

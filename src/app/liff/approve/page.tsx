@@ -13,14 +13,49 @@ function ApproveAction() {
     const router = useRouter();
 
     const [status, setStatus] = useState<"loading" | "success" | "error" | "unauthorized">("loading");
-    const [message, setMessage] = useState("กำลังตรวจสอบข้อมูล...");
+    const [message, setMessage] = useState("กำลังเชื่อมต่อระบบ...");
+
+    useEffect(() => {
+        const initLiffClient = async () => {
+            if (typeof window === "undefined") return;
+            try {
+                const liffId = process.env.NEXT_PUBLIC_LIFF_ID || "1234567890-AbcdEfgh";
+                const liff = (await import("@line/liff")).default;
+                await liff.init({ liffId });
+
+                if (liff.isLoggedIn()) {
+                    const profile = await liff.getProfile();
+
+                    // Always try to refresh token/session based on LINE ID if opening from LINE
+                    const res = await fetch("/api/auth/line-login", {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({ lineUserId: profile.userId })
+                    });
+
+                    if (res.ok) {
+                        const data = await res.json();
+                        if (data.customToken && data.success) {
+                            const { signInWithCustomToken } = await import("firebase/auth");
+                            const { auth } = await import("@/lib/firebase");
+                            await signInWithCustomToken(auth, data.customToken);
+                        }
+                    }
+                }
+            } catch (err) {
+                console.error("LIFF approval init err:", err);
+            }
+        };
+
+        initLiffClient();
+    }, []);
 
     useEffect(() => {
         if (authLoading) return;
 
         if (!userProfile) {
             setStatus("unauthorized");
-            setMessage("กรุณาเข้าสู่ระบบก่อนทำรายการ");
+            setMessage("กรุณาการลงทะเบียนผูกบัญชี LINE ก่อนทำรายการ");
             router.push("/liff/binding");
             return;
         }
