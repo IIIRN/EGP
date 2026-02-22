@@ -6,7 +6,7 @@ import Link from "next/link";
 import { useState, useEffect } from "react";
 import { POItem } from "@/types/po";
 import { useAuth } from "@/context/AuthContext";
-import { collection, addDoc, serverTimestamp, query, where, getDocs, doc, getDoc } from "firebase/firestore";
+import { collection, addDoc, serverTimestamp, query, where, getDocs, doc, getDoc, orderBy, limit } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { useRouter } from "next/navigation";
 import { Vendor } from "@/types/vendor";
@@ -17,7 +17,7 @@ export default function CreatePOPage() {
     const router = useRouter();
 
     const [items, setItems] = useState<Partial<POItem>[]>([
-        { id: "1", description: "", quantity: 1, unit: "ชิ้น", unitPrice: 0, amount: 0 }
+        { id: "1", description: "", quantity: 1, unit: "", unitPrice: 0, amount: 0 }
     ]);
 
     const [vendorId, setVendorId] = useState("");
@@ -27,14 +27,50 @@ export default function CreatePOPage() {
     const [success, setSuccess] = useState(false);
     const [creditDays, setCreditDays] = useState(30);
     const [poNumber, setPoNumber] = useState("");
-
+    const [poType, setPoType] = useState<"project" | "extra">("project");
     const [companySettings, setCompanySettings] = useState<any>(null);
+    const [availableUnits, setAvailableUnits] = useState<string[]>([]);
     const [selectedSignatureId, setSelectedSignatureId] = useState("");
 
     useEffect(() => {
-        const generated = `PO-${new Date().getFullYear()}${(new Date().getMonth() + 1).toString().padStart(2, '0')}-${Math.floor(Math.random() * 1000).toString().padStart(3, '0')}`;
-        setPoNumber(generated);
-    }, []);
+        async function fetchNextPoNumber() {
+            const yearStr = new Date().getFullYear().toString();
+            const monthStr = (new Date().getMonth() + 1).toString().padStart(2, '0');
+            const typePrefix = poType === 'project' ? 'P' : 'O';
+            const prefix = `PO-${yearStr}${monthStr}-${typePrefix}`;
+
+            try {
+                const q = query(
+                    collection(db, "purchase_orders"),
+                    where("poNumber", ">=", prefix),
+                    where("poNumber", "<=", prefix + '\uf8ff'),
+                    orderBy("poNumber", "desc"),
+                    limit(1)
+                );
+
+                const snapshot = await getDocs(q);
+                let nextNum = 1;
+
+                if (!snapshot.empty) {
+                    const lastPo = snapshot.docs[0].data();
+                    if (lastPo.poNumber) {
+                        const lastNumStr = lastPo.poNumber.substring(prefix.length);
+                        const lastNum = parseInt(lastNumStr, 10);
+                        if (!isNaN(lastNum)) {
+                            nextNum = lastNum + 1;
+                        }
+                    }
+                }
+
+                setPoNumber(`${prefix}${nextNum.toString().padStart(3, '0')}`);
+            } catch (error) {
+                console.error("Error generating PO Number:", error);
+                setPoNumber(`${prefix}001`);
+            }
+        }
+
+        fetchNextPoNumber();
+    }, [poType]);
 
     // Vendor Search State
     const [searchVendor, setSearchVendor] = useState("");
@@ -70,6 +106,10 @@ export default function CreatePOPage() {
                     // auto-select first signature if available
                     if (settings.signatures && settings.signatures.length > 0) {
                         setSelectedSignatureId(settings.signatures[0].id);
+                        // Extract itemUnits
+                        if (configSnap.data().itemUnits) {
+                            setAvailableUnits(configSnap.data().itemUnits);
+                        }
                     }
                 }
             } catch (error) {
@@ -84,7 +124,7 @@ export default function CreatePOPage() {
     const handleAddItem = () => {
         setItems([
             ...items,
-            { id: Date.now().toString(), description: "", quantity: 1, unit: "ชิ้น", unitPrice: 0, amount: 0 }
+            { id: Date.now().toString(), description: "", quantity: 1, unit: "", unitPrice: 0, amount: 0 }
         ]);
     };
 
@@ -155,6 +195,7 @@ export default function CreatePOPage() {
 
             const newPO = {
                 poNumber: poNumber.trim(),
+                poType: poType,
                 projectId: currentProject.id,
                 vendorId: vendorId || "unknown",
                 vendorName: selectedVendor ? selectedVendor.name : "ไม่ระบุผู้ขาย",
@@ -255,6 +296,40 @@ export default function CreatePOPage() {
             <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
                 <div className="p-6 space-y-8">
 
+                    {/* เลือกประเภท PO */}
+                    <div>
+                        <label className="block text-sm font-medium text-slate-700 mb-3">ประเภทใบสั่งซื้อ (PO Type)</label>
+                        <div className="flex gap-4">
+                            <label className={`flex items-center gap-2 px-4 py-3 rounded-xl border cursor-pointer transition-all ${poType === 'project' ? 'border-blue-600 bg-blue-50/50' : 'border-slate-200 hover:border-slate-300'}`}>
+                                <input
+                                    type="radio"
+                                    name="poType"
+                                    className="text-blue-600 focus:ring-blue-500 w-4 h-4 cursor-pointer"
+                                    checked={poType === 'project'}
+                                    onChange={() => setPoType('project')}
+                                />
+                                <div>
+                                    <p className="text-sm font-semibold text-slate-900 leading-none mb-1">PO ในโครงการ</p>
+                                    <p className="text-xs text-slate-500">สั่งซื้อวัสดุ/ค่าใช้จ่ายสำหรับโครงการก่อสร้างนี้โดยตรง</p>
+                                </div>
+                            </label>
+
+                            <label className={`flex items-center gap-2 px-4 py-3 rounded-xl border cursor-pointer transition-all ${poType === 'extra' ? 'border-amber-500 bg-amber-50/50' : 'border-slate-200 hover:border-slate-300'}`}>
+                                <input
+                                    type="radio"
+                                    name="poType"
+                                    className="text-amber-500 focus:ring-amber-500 w-4 h-4 cursor-pointer"
+                                    checked={poType === 'extra'}
+                                    onChange={() => setPoType('extra')}
+                                />
+                                <div>
+                                    <p className="text-sm font-semibold text-slate-900 leading-none mb-1">PO เพิ่มเติม (นอกงบ/เบ็ดเตล็ด)</p>
+                                    <p className="text-xs text-slate-500">ค่าใช้จ่ายเพิ่มเติมที่อาจไม่เกี่ยวกับ BOQ หลัก</p>
+                                </div>
+                            </label>
+                        </div>
+                    </div>
+
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                         <div>
                             <label className="block text-sm font-medium text-slate-700 mb-1">เลขที่ใบสั่งซื้อ (PO Number) <span className="text-red-500">*</span></label>
@@ -330,7 +405,7 @@ export default function CreatePOPage() {
                             {showVendorDropdown && <div className="fixed z-40 hidden"></div>}
                         </div>
 
-                        <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mt-6">
+                        <div className="md:col-span-2 grid grid-cols-1 md:grid-cols-4 gap-4 mt-2">
                             <div>
                                 <label className="block text-sm font-medium text-slate-700 mb-1">วันที่</label>
                                 <input type="date" className="w-full border border-slate-300 rounded-lg py-2 px-3 text-sm text-slate-600 focus:ring-blue-500 focus:border-blue-500" />
@@ -398,7 +473,7 @@ export default function CreatePOPage() {
                                                     value={item.description}
                                                     onChange={(e) => handleItemChange(item.id!, 'description', e.target.value)}
                                                     placeholder="เช่น ปูนซีเมนต์ฉาบเรียบ 50กก."
-                                                    className="w-full text-sm border-0 bg-transparent focus:ring-0 p-0 text-slate-900 placeholder-slate-300"
+                                                    className="w-full text-sm p-1 border-0 bg-transparent focus:ring-0 p-0 text-slate-900 placeholder-slate-300"
                                                 />
                                             </td>
                                             <td className="px-4 py-3">
@@ -412,6 +487,7 @@ export default function CreatePOPage() {
                                             <td className="px-4 py-3">
                                                 <input
                                                     type="text"
+                                                    list="unit-list"
                                                     value={item.unit}
                                                     onChange={(e) => handleItemChange(item.id!, 'unit', e.target.value)}
                                                     className="w-16 text-sm border border-slate-200 rounded py-1 px-2 focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
@@ -440,6 +516,11 @@ export default function CreatePOPage() {
                                     ))}
                                 </tbody>
                             </table>
+                            {availableUnits.length > 0 && (
+                                <datalist id="unit-list">
+                                    {availableUnits.map(u => <option key={u} value={u} />)}
+                                </datalist>
+                            )}
                             <div className="bg-slate-50 p-3 border-t border-slate-200">
                                 <button
                                     onClick={handleAddItem}
@@ -457,8 +538,18 @@ export default function CreatePOPage() {
                                 <span>ยอดรวมก่อนภาษี (Subtotal)</span>
                                 <span className="font-medium text-slate-900">฿ {subTotal.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
                             </div>
-                            <div className="flex justify-between text-sm text-slate-600 items-center">
-                                <span>ภาษีมูลค่าเพิ่ม (VAT {vatRate}%)</span>
+                            <div className="flex justify-between text-sm text-slate-600 items-center mt-2">
+                                <div className="flex items-center gap-2">
+                                    <span>ภาษีมูลค่าเพิ่ม (VAT)</span>
+                                    <select
+                                        value={vatRate}
+                                        onChange={(e) => setVatRate(Number(e.target.value))}
+                                        className="text-sm border border-slate-300 rounded py-1 px-2 focus:ring-blue-500 focus:border-blue-500 bg-white"
+                                    >
+                                        <option value={7}>7%</option>
+                                        <option value={0}>ไม่มี VAT (0%)</option>
+                                    </select>
+                                </div>
                                 <span className="font-medium text-slate-900">฿ {vatAmount.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
                             </div>
                             <div className="flex justify-between text-base pt-3 border-t border-slate-200">

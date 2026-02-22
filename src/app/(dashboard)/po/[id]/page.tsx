@@ -235,8 +235,13 @@ export default function PODetailPage({ params }: { params: Promise<{ id: string 
                             <div className="col-span-2 text-right border-b-2 border-black h-5 leading-none"></div>
                         </div>
 
-                        <div className="text-center font-bold text-[12px] mb-4">
-                            {companySettings.name} มีความยินดีที่จะจัดจ้างงาน ตามรายการดังต่อไปนี้
+                        <div className="flex justify-between items-center mb-4 border-b border-black pb-4">
+                            <div className="text-left font-bold text-[14px]">
+                                {po.poType === 'extra' ? 'EXTRA PURCHASE ORDER' : 'PURCHASE ORDER'}
+                            </div>
+                            <div className="text-right font-bold text-[12px]">
+                                {companySettings.name} มีความยินดีที่จะจัดจ้างงาน ตามรายการดังต่อไปนี้
+                            </div>
                         </div>
 
                         {/* Table */}
@@ -286,20 +291,8 @@ export default function PODetailPage({ params }: { params: Promise<{ id: string 
                             </tbody>
                             <tfoot>
                                 <tr>
-                                    <td className="border-x border-b-transparent p-0 align-top" colSpan={4} rowSpan={3}>
-                                        <div className="p-2 space-y-1">
-                                            <p><span className="font-bold">ระยะเวลาดำเนินการ</span> 120 วัน</p>
-                                            <p><span className="font-bold">เงื่อนไขการจ่ายเงิน</span> Monthly Progress</p>
-                                        </div>
+                                    <td className="border-x border-b-transparent p-0 align-top" colSpan={4} rowSpan={1}>
                                     </td>
-                                    <td colSpan={2} className="border border-black py-1.5 px-2 text-center font-bold">ส่วนลด</td>
-                                    <td className="border border-black py-1.5 px-2 text-right">0.00</td>
-                                </tr>
-                                <tr>
-                                    <td colSpan={2} className="border border-black py-1.5 px-2 text-center font-bold">ราคาลดรวม</td>
-                                    <td className="border border-black py-1.5 px-2 text-right">{po.subTotal?.toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
-                                </tr>
-                                <tr>
                                     <td colSpan={2} className="border border-black py-1.5 px-2 text-center font-bold">Vat {po.vatRate}%</td>
                                     <td className="border border-black py-1.5 px-2 text-right">{po.vatAmount?.toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
                                 </tr>

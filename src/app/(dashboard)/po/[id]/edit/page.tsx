@@ -20,7 +20,7 @@ export default function EditPOPage({ params }: { params: Promise<{ id: string }>
     const [po, setPo] = useState<PurchaseOrder | null>(null);
     const [loading, setLoading] = useState(true);
 
-    const [items, setItems] = useState<Partial<POItem>[]>([{ id: "1", description: "", quantity: 1, unit: "ชิ้น", unitPrice: 0, amount: 0 }]);
+    const [items, setItems] = useState<Partial<POItem>[]>([{ id: "1", description: "", quantity: 1, unit: "", unitPrice: 0, amount: 0 }]);
     const [vendorId, setVendorId] = useState("");
     const [vendors, setVendors] = useState<Vendor[]>([]);
     const [vatRate, setVatRate] = useState(7);
@@ -30,6 +30,7 @@ export default function EditPOPage({ params }: { params: Promise<{ id: string }>
     const [poNumber, setPoNumber] = useState("");
 
     const [companySettings, setCompanySettings] = useState<any>(null);
+    const [availableUnits, setAvailableUnits] = useState<string[]>([]);
     const [selectedSignatureId, setSelectedSignatureId] = useState("");
 
     useEffect(() => {
@@ -72,6 +73,9 @@ export default function EditPOPage({ params }: { params: Promise<{ id: string }>
                     if (data.signatureId) {
                         setSelectedSignatureId(data.signatureId);
                     }
+                    // auto-select first signature if available
+                    // This logic needs companySettings to be fetched first, so it's better placed after companySettings are loaded.
+                    // For now, we'll keep the original logic of setting signatureId from PO data.
 
                     if (data.items && data.items.length > 0) {
                         setItems(data.items);
@@ -99,6 +103,9 @@ export default function EditPOPage({ params }: { params: Promise<{ id: string }>
                     // We only want to set a default if PO data hasn't already loaded and set one. 
                     // To handle async race conditions easily, we can just do it if not set later or handled via selectedSignatureId directly.
                 }
+                if (configSnap.exists() && configSnap.data().itemUnits) {
+                    setAvailableUnits(configSnap.data().itemUnits);
+                }
             } catch (error) {
                 console.error("Error fetching company settings:", error);
             }
@@ -110,7 +117,7 @@ export default function EditPOPage({ params }: { params: Promise<{ id: string }>
     }, [resolvedParams.id, router]);
 
     const handleAddItem = () => {
-        setItems([...items, { id: Date.now().toString(), description: "", quantity: 1, unit: "ชิ้น", unitPrice: 0, amount: 0 }]);
+        setItems([...items, { id: Date.now().toString(), description: "", quantity: 1, unit: "", unitPrice: 0, amount: 0 }]);
     };
 
     const handleItemChange = (id: string, field: keyof POItem, value: any) => {
@@ -278,7 +285,7 @@ export default function EditPOPage({ params }: { params: Promise<{ id: string }>
                             </select>
                         </div>
 
-                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                        <div className="md:col-span-2 grid grid-cols-1 md:grid-cols-3 gap-4 mt-2">
                             <div>
                                 <label className="block text-sm font-medium text-slate-700 mb-1">วันที่สร้าง</label>
                                 <input type="text" disabled value={po.createdAt ? (po.createdAt as any).toDate().toLocaleDateString('th-TH') : 'ไม่ระบุ'} className="w-full border border-slate-200 bg-slate-50 rounded-lg py-2 px-3 text-sm text-slate-500 cursor-not-allowed" />
@@ -341,7 +348,7 @@ export default function EditPOPage({ params }: { params: Promise<{ id: string }>
                                                     value={item.description}
                                                     onChange={(e) => handleItemChange(item.id!, 'description', e.target.value)}
                                                     placeholder="เช่น ปูนซีเมนต์ฉาบเรียบ 50กก."
-                                                    className="w-full text-sm border-0 bg-transparent focus:ring-0 p-0 text-slate-900 placeholder-slate-300"
+                                                    className="w-full text-sm p-1 border-0 bg-transparent focus:ring-0 p-0 text-slate-900 placeholder-slate-300"
                                                 />
                                             </td>
                                             <td className="px-4 py-3">
@@ -355,6 +362,7 @@ export default function EditPOPage({ params }: { params: Promise<{ id: string }>
                                             <td className="px-4 py-3">
                                                 <input
                                                     type="text"
+                                                    list="unit-list"
                                                     value={item.unit}
                                                     onChange={(e) => handleItemChange(item.id!, 'unit', e.target.value)}
                                                     className="w-16 text-sm border border-slate-200 rounded py-1 px-2 focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
@@ -383,6 +391,11 @@ export default function EditPOPage({ params }: { params: Promise<{ id: string }>
                                     ))}
                                 </tbody>
                             </table>
+                            {availableUnits.length > 0 && (
+                                <datalist id="unit-list">
+                                    {availableUnits.map(u => <option key={u} value={u} />)}
+                                </datalist>
+                            )}
                             <div className="bg-slate-50 p-3 border-t border-slate-200">
                                 <button
                                     onClick={handleAddItem}
@@ -400,8 +413,18 @@ export default function EditPOPage({ params }: { params: Promise<{ id: string }>
                                 <span>ยอดรวมก่อนภาษี (Subtotal)</span>
                                 <span className="font-medium text-slate-900">฿ {subTotal.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
                             </div>
-                            <div className="flex justify-between text-sm text-slate-600 items-center">
-                                <span>ภาษีมูลค่าเพิ่ม (VAT {vatRate}%)</span>
+                            <div className="flex justify-between text-sm text-slate-600 items-center mt-2">
+                                <div className="flex items-center gap-2">
+                                    <span>ภาษีมูลค่าเพิ่ม (VAT)</span>
+                                    <select
+                                        value={vatRate}
+                                        onChange={(e) => setVatRate(Number(e.target.value))}
+                                        className="text-sm border border-slate-300 rounded py-1 px-2 focus:ring-blue-500 focus:border-blue-500 bg-white"
+                                    >
+                                        <option value={7}>7%</option>
+                                        <option value={0}>ไม่มี VAT (0%)</option>
+                                    </select>
+                                </div>
                                 <span className="font-medium text-slate-900">฿ {vatAmount.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
                             </div>
                             <div className="flex justify-between text-base pt-3 border-t border-slate-200">

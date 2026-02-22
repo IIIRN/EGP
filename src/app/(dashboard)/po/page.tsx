@@ -13,6 +13,10 @@ export default function POListingPage() {
     const [pos, setPos] = useState<PurchaseOrder[]>([]);
     const [usersMap, setUsersMap] = useState<Record<string, string>>({});
     const [loading, setLoading] = useState(true);
+    const [activeTab, setActiveTab] = useState<"project" | "extra">("project");
+
+    // Compute filtered POS
+    const renderedPos = pos.filter(po => (po.poType || 'project') === activeTab);
 
     useEffect(() => {
         if (!currentProject) {
@@ -116,7 +120,30 @@ export default function POListingPage() {
             </div>
 
             <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
-                <div className="p-4 border-b border-slate-200 flex justify-between items-center bg-slate-50/50">
+                <div className="border-b border-slate-200 bg-slate-50/50">
+                    <div className="flex border-b border-slate-200">
+                        <button
+                            onClick={() => setActiveTab("project")}
+                            className={`flex flex-1 items-center justify-center py-4 text-sm font-medium text-center border-b-2 transition-colors ${activeTab === 'project' ? 'border-blue-600 text-blue-600 bg-white' : 'border-transparent text-slate-500 hover:text-slate-700 hover:bg-slate-50/50'}`}
+                        >
+                            PO ในโครงการ
+                            <span className={`ml-2 inline-flex items-center justify-center px-2 py-0.5 rounded-full text-xs font-semibold ${activeTab === 'project' ? 'bg-blue-100 text-blue-700' : 'bg-slate-200 text-slate-600'}`}>
+                                {pos.filter(po => (po.poType || 'project') === 'project').length}
+                            </span>
+                        </button>
+                        <button
+                            onClick={() => setActiveTab("extra")}
+                            className={`flex flex-1 items-center justify-center py-4 text-sm font-medium text-center border-b-2 transition-colors ${activeTab === 'extra' ? 'border-amber-500 text-amber-600 bg-white' : 'border-transparent text-slate-500 hover:text-slate-700 hover:bg-slate-50/50'}`}
+                        >
+                            PO เพิ่มเติม (นอกงบ)
+                            <span className={`ml-2 inline-flex items-center justify-center px-2 py-0.5 rounded-full text-xs font-semibold ${activeTab === 'extra' ? 'bg-amber-100 text-amber-700' : 'bg-slate-200 text-slate-600'}`}>
+                                {pos.filter(po => po.poType === 'extra').length}
+                            </span>
+                        </button>
+                    </div>
+                </div>
+
+                <div className="p-4 border-b border-slate-200 flex justify-between items-center bg-white">
                     <div className="relative max-w-sm w-full">
                         <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
                             <Search className="h-5 w-5 text-slate-400" />
@@ -163,16 +190,16 @@ export default function POListingPage() {
                                         กำลังโหลดข้อมูล...
                                     </td>
                                 </tr>
-                            ) : pos.length === 0 ? (
+                            ) : renderedPos.length === 0 ? (
                                 <tr>
                                     <td colSpan={7} className="px-6 py-12 text-center flex-col items-center">
                                         <FileText className="mx-auto h-12 w-12 text-slate-300" />
                                         <h3 className="mt-2 text-sm font-semibold text-slate-900">ไม่มีรายการใบสั่งซื้อ</h3>
-                                        <p className="mt-1 text-sm text-slate-500">ยังไม่มีการสร้าง (PO) สำหรับโครงการนี้</p>
+                                        <p className="mt-1 text-sm text-slate-500">ไม่พบเอกสารประเภทที่เลือก</p>
                                     </td>
                                 </tr>
                             ) : (
-                                pos.map((po) => {
+                                renderedPos.map((po) => {
                                     const statusInfo = translatedStatus(po.status);
                                     let dateStr = "ไม่ระบุ";
                                     if (po.createdAt && (po.createdAt as any).toDate) {

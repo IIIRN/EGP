@@ -44,107 +44,168 @@ export async function POST(request: Request) {
 
         const isPending = data?.status === "pending";
 
+        let poFooterButtons: any[] = [];
+        if (isPending && liffId) {
+            poFooterButtons.push({
+                type: "button",
+                style: "primary",
+                color: "#10b981",
+                height: "sm",
+                action: { type: "uri", label: "ตรวจสอบและอนุมัติ", uri: approveUrl }
+            });
+        }
+
+        let secondaryPoButtons = [];
+        if (vendorData?.phone) {
+            secondaryPoButtons.push({
+                type: "button",
+                style: "secondary",
+                height: "sm",
+                action: { type: "uri", label: "โทรติดต่อ", uri: `tel:${vendorData.phone}` }
+            });
+        }
+        if (vendorData?.googleMapUrl) {
+            secondaryPoButtons.push({
+                type: "button",
+                style: "secondary",
+                height: "sm",
+                action: { type: "uri", label: "แผนที่", uri: vendorData.googleMapUrl }
+            });
+        }
+        if (secondaryPoButtons.length > 0) {
+            poFooterButtons.push({
+                type: "box",
+                layout: "horizontal",
+                spacing: "sm",
+                contents: secondaryPoButtons
+            });
+        }
+
         if (type === "PO") {
-            altText = isPending ? `⚠️ ขออนุมัติใบสั่งซื้อ (PO): ${data.poNumber}` : `🎉 อนุมัติใบสั่งซื้อ (PO) เรียบร้อย: ${data.poNumber}`;
+            altText = isPending ? `แจ้งเตือน: รออนุมัติใบสั่งซื้อ (PO) - ${data.poNumber}` : `แจ้งเตือน: อนุมัติใบสั่งซื้อ (PO) เรียบร้อย - ${data.poNumber}`;
             flexContents = {
                 type: "bubble",
                 size: "mega",
-                header: {
-                    type: "box",
-                    layout: "vertical",
-                    contents: [
-                        { type: "text", text: isPending ? "⚠️ รออนุมัติใบสั่งซื้อ" : "✅ อนุมัติใบสั่งซื้อสำเร็จ", weight: "bold", color: "#FFFFFF", size: "lg" },
-                        { type: "text", text: projectName || "ไม่ระบุโครงการ", color: "#FFFFFFcc", size: "sm", margin: "sm" }
-                    ],
-                    backgroundColor: isPending ? "#f59e0b" : "#10b981",
-                    paddingAll: "xxl"
-                },
                 body: {
                     type: "box",
                     layout: "vertical",
                     contents: [
-                        { type: "text", text: `เลขที่: ${data.poNumber}`, weight: "bold", size: "xl", color: "#1e293b" },
-                        { type: "text", text: `ยอดรวม: ฿${data.totalAmount?.toLocaleString(undefined, { minimumFractionDigits: 2 })}`, size: "md", color: "#64748b", margin: "sm" },
-                        { type: "separator", margin: "xl" },
+                        { type: "text", text: isPending ? "เอกสารรอการอนุมัติ (PO)" : "อนุมัติเอกสารเรียบร้อย (PO)", weight: "bold", color: isPending ? "#d97706" : "#059669", size: "md" },
+                        { type: "text", text: projectName || "ไม่ระบุโครงการ", size: "xs", color: "#64748b", margin: "sm", wrap: true },
+                        { type: "separator", margin: "lg" },
                         {
                             type: "box",
                             layout: "vertical",
-                            margin: "xl",
+                            margin: "lg",
                             spacing: "sm",
                             contents: [
-                                { type: "text", text: "ข้อมูลผู้ขาย / คู่ค้า", weight: "bold", color: "#334155", size: "sm" },
-                                { type: "text", text: vendorData?.name || data.vendorName || "ไม่ระบุชื่อร้าน", size: "sm", color: "#64748b", wrap: true },
-                                { type: "text", text: `โทร: ${vendorData?.phone || "ไม่มีเบอร์ติดต่อ"}`, size: "sm", color: "#64748b" },
-                                { type: "text", text: `ที่อยู่: ${vendorData?.address || "-"}`, size: "xs", color: "#94a3b8", wrap: true }
+                                {
+                                    type: "box",
+                                    layout: "horizontal",
+                                    contents: [
+                                        { type: "text", text: "เลขที่เอกสาร", size: "sm", color: "#64748b", flex: 1 },
+                                        { type: "text", text: data.poNumber || "-", size: "sm", color: "#1e293b", flex: 2, weight: "bold", wrap: true }
+                                    ]
+                                },
+                                {
+                                    type: "box",
+                                    layout: "horizontal",
+                                    contents: [
+                                        { type: "text", text: "ผู้ขาย/คู่ค้า", size: "sm", color: "#64748b", flex: 1 },
+                                        { type: "text", text: vendorData?.name || data.vendorName || "-", size: "sm", color: "#1e293b", flex: 2, wrap: true }
+                                    ]
+                                },
+                                {
+                                    type: "box",
+                                    layout: "horizontal",
+                                    contents: [
+                                        { type: "text", text: "เบอร์โทร", size: "sm", color: "#64748b", flex: 1 },
+                                        { type: "text", text: vendorData?.phone || "-", size: "sm", color: "#1e293b", flex: 2, wrap: true }
+                                    ]
+                                },
+                                {
+                                    type: "box",
+                                    layout: "horizontal",
+                                    contents: [
+                                        { type: "text", text: "ยอดรวมทั้งสิ้น", size: "sm", color: "#64748b", flex: 1 },
+                                        { type: "text", text: `฿${(data.totalAmount || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}`, size: "sm", color: "#1e293b", flex: 2, weight: "bold" }
+                                    ]
+                                }
                             ]
                         }
                     ]
                 },
-                footer: {
+                footer: poFooterButtons.length > 0 ? {
                     type: "box",
-                    layout: "horizontal",
+                    layout: "vertical",
                     spacing: "sm",
-                    contents: [
-                        ...(isPending && liffId ? [{
-                            type: "button",
-                            style: "primary",
-                            color: "#10b981",
-                            action: { type: "uri", label: "✅ อนุมัติเลย", uri: approveUrl }
-                        }] : []),
-                        ...(vendorData?.phone ? [{
-                            type: "button",
-                            style: "secondary",
-                            color: "#3b82f6",
-                            action: { type: "uri", label: "📞 โทรออก", uri: `tel:${vendorData.phone}` }
-                        }] : []),
-                        ...(vendorData?.googleMapUrl ? [{
-                            type: "button",
-                            style: "secondary",
-                            action: { type: "uri", label: "📍 แผนที่", uri: vendorData.googleMapUrl }
-                        }] : [])
-                    ]
-                }
+                    contents: poFooterButtons
+                } : undefined
             };
         } else if (type === "VO") {
-            altText = isPending ? `⚠️ ขออนุมัติงานเพิ่ม-ลด (VO): ${data.voNumber}` : `🎉 อนุมัติงานเพิ่ม-ลด (VO) เรียบร้อย: ${data.voNumber}`;
+            altText = isPending ? `แจ้งเตือน: รออนุมัติงานเพิ่ม-ลด (VO) - ${data.voNumber}` : `แจ้งเตือน: อนุมัติงานเพิ่ม-ลด (VO) เรียบร้อย - ${data.voNumber}`;
             flexContents = {
                 type: "bubble",
                 size: "mega",
-                header: {
-                    type: "box",
-                    layout: "vertical",
-                    contents: [
-                        { type: "text", text: isPending ? "⚠️ รออนุมัติงานเพิ่ม-ลด (VO)" : "✅ อนุมัติงานเพิ่ม-ลด (VO)", weight: "bold", color: "#FFFFFF", size: "lg" },
-                        { type: "text", text: projectName || "ไม่ระบุโครงการ", color: "#FFFFFFcc", size: "sm", margin: "sm" }
-                    ],
-                    backgroundColor: isPending ? "#f59e0b" : "#3b82f6",
-                    paddingAll: "xxl"
-                },
                 body: {
                     type: "box",
                     layout: "vertical",
                     contents: [
-                        { type: "text", text: `เลขที่: ${data.voNumber}`, weight: "bold", size: "xl", color: "#1e293b" },
-                        { type: "text", text: data.title || "ไม่มีหัวข้อ", size: "md", color: "#334155", margin: "md", wrap: true },
+                        { type: "text", text: isPending ? "เอกสารรอการอนุมัติ (VO)" : "อนุมัติเอกสารเรียบร้อย (VO)", weight: "bold", color: isPending ? "#d97706" : "#2563eb", size: "md" },
+                        { type: "text", text: projectName || "ไม่ระบุโครงการ", size: "xs", color: "#64748b", margin: "sm", wrap: true },
+                        { type: "separator", margin: "lg" },
                         {
-                            type: "text",
-                            text: `ผลกระทบงบ: ${data.totalAmount > 0 ? '+' : ''}฿${data.totalAmount?.toLocaleString(undefined, { minimumFractionDigits: 2 })}`,
-                            size: "md",
-                            color: data.totalAmount > 0 ? "#ef4444" : "#10b981",
-                            weight: "bold",
-                            margin: "sm"
+                            type: "box",
+                            layout: "vertical",
+                            margin: "lg",
+                            spacing: "sm",
+                            contents: [
+                                {
+                                    type: "box",
+                                    layout: "horizontal",
+                                    contents: [
+                                        { type: "text", text: "เลขที่เอกสาร", size: "sm", color: "#64748b", flex: 1 },
+                                        { type: "text", text: data.voNumber || "-", size: "sm", color: "#1e293b", flex: 2, weight: "bold", wrap: true }
+                                    ]
+                                },
+                                {
+                                    type: "box",
+                                    layout: "horizontal",
+                                    contents: [
+                                        { type: "text", text: "หัวข้อ", size: "sm", color: "#64748b", flex: 1 },
+                                        { type: "text", text: data.title || "-", size: "sm", color: "#1e293b", flex: 2, wrap: true }
+                                    ]
+                                },
+                                {
+                                    type: "box",
+                                    layout: "horizontal",
+                                    contents: [
+                                        { type: "text", text: "ผลกระทบงบ", size: "sm", color: "#64748b", flex: 1 },
+                                        {
+                                            type: "text",
+                                            text: `${(data.totalAmount || 0) > 0 ? '+' : ''}฿${(data.totalAmount || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}`,
+                                            size: "sm",
+                                            color: (data.totalAmount || 0) > 0 ? "#ef4444" : "#059669",
+                                            flex: 2,
+                                            weight: "bold"
+                                        }
+                                    ]
+                                }
+                            ]
                         }
                     ]
                 },
                 footer: isPending && liffId ? {
                     type: "box",
-                    layout: "horizontal",
+                    layout: "vertical",
+                    spacing: "sm",
                     contents: [
                         {
                             type: "button",
                             style: "primary",
                             color: "#10b981",
-                            action: { type: "uri", label: "✅ อนุมัติเลย", uri: approveUrl }
+                            height: "sm",
+                            action: { type: "uri", label: "ตรวจสอบและอนุมัติ", uri: approveUrl }
                         }
                     ]
                 } : undefined
