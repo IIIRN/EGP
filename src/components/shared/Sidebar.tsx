@@ -15,7 +15,8 @@ import {
     X,
     User,
     LogOut,
-    LineChart
+    LineChart,
+    Briefcase
 } from "lucide-react";
 
 const navigation = [
@@ -23,6 +24,7 @@ const navigation = [
     { name: "รายงาน (Reports)", href: "/reports", icon: LineChart },
     { name: "โครงการ (Projects)", href: "/projects", icon: Building2 },
     { name: "ใบสั่งซื้อ (PO)", href: "/po", icon: FileText },
+    { name: "ใบจ้างงาน (WC)", href: "/wc", icon: Briefcase },
     { name: "งานเพิ่ม-ลด (VO)", href: "/vo", icon: FileEdit },
     { name: "คู่ค้า (Vendors)", href: "/vendors", icon: Users },
     { name: "พนักงาน (Users)", href: "/users", icon: UserCog },

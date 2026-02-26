@@ -1,7 +1,7 @@
 "use client";
 
 import { useProject } from "@/context/ProjectContext";
-import { Building2, TrendingUp, Users, FileText, Activity, Wallet, AlertCircle } from "lucide-react";
+import { Building2, TrendingUp, Users, FileText, Activity, Wallet, AlertCircle, Briefcase } from "lucide-react";
 import Link from "next/link";
 import { useAuth } from "@/context/AuthContext";
 import { useEffect, useState } from "react";
@@ -9,6 +9,7 @@ import { collection, query, where, onSnapshot } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { PurchaseOrder } from "@/types/po";
 import { VariationOrder } from "@/types/vo";
+import { WorkContract } from "@/types/wc";
 
 export default function MainDashboard() {
     const { currentProject } = useProject();
@@ -17,12 +18,15 @@ export default function MainDashboard() {
     const [stats, setStats] = useState({
         pendingPO: 0,
         approvedPOTotal: 0,
+        pendingWC: 0,
+        approvedWCTotal: 0,
         pendingVO: 0,
         approvedVOTotal: 0,
         totalVendors: 0
     });
 
     const [recentPOs, setRecentPOs] = useState<PurchaseOrder[]>([]);
+    const [recentWCs, setRecentWCs] = useState<WorkContract[]>([]);
 
     useEffect(() => {
         if (!currentProject) return;
@@ -57,6 +61,35 @@ export default function MainDashboard() {
             setStats(prev => ({ ...prev, pendingPO: pendingCount, approvedPOTotal: approvedSum }));
         });
 
+        // Fetch WCs
+        const wcQuery = query(
+            collection(db, "work_contracts"),
+            where("projectId", "==", currentProject.id)
+        );
+        const unSubWC = onSnapshot(wcQuery, (snapshot) => {
+            let pendingCount = 0;
+            let approvedSum = 0;
+            const wcList: WorkContract[] = [];
+
+            snapshot.forEach((doc) => {
+                const wc = { id: doc.id, ...doc.data() } as WorkContract;
+                wcList.push(wc);
+                if (wc.status === "pending") pendingCount++;
+                if (wc.status === "approved") {
+                    approvedSum += (wc.totalAmount || 0);
+                }
+            });
+
+            wcList.sort((a, b) => {
+                const dateA = a.createdAt ? new Date((a.createdAt as any).toDate()).getTime() : 0;
+                const dateB = b.createdAt ? new Date((b.createdAt as any).toDate()).getTime() : 0;
+                return dateB - dateA;
+            });
+            setRecentWCs(wcList.slice(0, 5));
+
+            setStats(prev => ({ ...prev, pendingWC: pendingCount, approvedWCTotal: approvedSum }));
+        });
+
         // Fetch VOs
         const voQuery = query(
             collection(db, "variation_orders"),
@@ -85,6 +118,7 @@ export default function MainDashboard() {
 
         return () => {
             unSubPO();
+            unSubWC();
             unSubVO();
             unSubVendors();
         };
@@ -93,10 +127,11 @@ export default function MainDashboard() {
     // Financial Calculations
     const initialBudget = currentProject?.budget || 0;
     const netBudget = initialBudget + stats.approvedVOTotal; // VO Impact adjusts the budget capacity
-    const availableBudget = netBudget - stats.approvedPOTotal;
+    const totalUsed = stats.approvedPOTotal + stats.approvedWCTotal; // PO + WC combined
+    const availableBudget = netBudget - totalUsed;
 
     // Percentages
-    const usedPercentage = netBudget > 0 ? (stats.approvedPOTotal / netBudget) * 100 : 0;
+    const usedPercentage = netBudget > 0 ? (totalUsed / netBudget) * 100 : 0;
     const isOverBudget = usedPercentage > 100;
 
     return (
@@ -139,8 +174,9 @@ export default function MainDashboard() {
                             </p>
                         </div>
                         <div className="space-y-1 border-l border-slate-200 pl-6">
-                            <p className="text-sm text-slate-500">สั่งซื้อแล้ว (Approved POs)</p>
-                            <p className="text-xl font-semibold text-orange-600">฿ {stats.approvedPOTotal.toLocaleString(undefined, { minimumFractionDigits: 2 })}</p>
+                            <p className="text-sm text-slate-500">สั่งซื้อ+จ้างงาน (PO+WC)</p>
+                            <p className="text-xl font-semibold text-orange-600">฿ {totalUsed.toLocaleString(undefined, { minimumFractionDigits: 2 })}</p>
+                            <p className="text-xs text-slate-400 mt-0.5">PO ฿{stats.approvedPOTotal.toLocaleString()} | WC ฿{stats.approvedWCTotal.toLocaleString()}</p>
                         </div>
                         <div className="space-y-1 border-l border-slate-200 pl-6 bg-slate-50 p-3 rounded-lg -m-3">
                             <p className="text-sm font-medium text-slate-700">งบประมาณคงเหลือ (Available)</p>
@@ -167,15 +203,25 @@ export default function MainDashboard() {
             )}
 
             {/* Quick Stats Grid */}
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
 
                 <div className="bg-white rounded-xl p-6 border border-slate-200 shadow-sm flex items-center space-x-4">
-                    <div className="bg-orange-100 p-3 rounded-lg text-orange-600">
+                    <div className="bg-blue-100 p-3 rounded-lg text-blue-600">
                         <FileText size={24} />
                     </div>
                     <div>
-                        <p className="text-sm font-medium text-slate-500">รออนุมัติ (PO Pending)</p>
+                        <p className="text-sm font-medium text-slate-500">PO รออนุมัติ</p>
                         <h3 className="text-2xl font-bold text-slate-900">{stats.pendingPO} <span className="text-sm font-normal text-slate-500">รายการ</span></h3>
+                    </div>
+                </div>
+
+                <div className="bg-white rounded-xl p-6 border border-slate-200 shadow-sm flex items-center space-x-4">
+                    <div className="bg-emerald-100 p-3 rounded-lg text-emerald-600">
+                        <Briefcase size={24} />
+                    </div>
+                    <div>
+                        <p className="text-sm font-medium text-slate-500">WC รออนุมัติ</p>
+                        <h3 className="text-2xl font-bold text-slate-900">{stats.pendingWC} <span className="text-sm font-normal text-slate-500">รายการ</span></h3>
                     </div>
                 </div>
 
@@ -184,7 +230,7 @@ export default function MainDashboard() {
                         <Activity size={24} />
                     </div>
                     <div>
-                        <p className="text-sm font-medium text-slate-500">กำลังดำเนินการ (VO Pending)</p>
+                        <p className="text-sm font-medium text-slate-500">VO รออนุมัติ</p>
                         <h3 className="text-2xl font-bold text-slate-900">{stats.pendingVO} <span className="text-sm font-normal text-slate-500">รายการ</span></h3>
                     </div>
                 </div>
@@ -194,7 +240,7 @@ export default function MainDashboard() {
                         <Users size={24} />
                     </div>
                     <div>
-                        <p className="text-sm font-medium text-slate-500">คู่ค้าในระบบทั้งหมด</p>
+                        <p className="text-sm font-medium text-slate-500">คู่ค้าทั้งหมด</p>
                         <h3 className="text-2xl font-bold text-slate-900">{stats.totalVendors} <span className="text-sm font-normal text-slate-500">บริษัท</span></h3>
                     </div>
                 </div>
@@ -204,8 +250,8 @@ export default function MainDashboard() {
             {/* Main Grid area */}
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
 
-                {/* Recent Activity */}
-                <div className="bg-white rounded-xl border border-slate-200 shadow-sm col-span-2">
+                {/* Recent POs */}
+                <div className="bg-white rounded-xl border border-slate-200 shadow-sm lg:col-span-2">
                     <div className="p-6 border-b border-slate-200 flex justify-between items-center">
                         <h3 className="text-lg font-bold text-slate-800">ใบสั่งซื้อ (PO) ล่าสุด</h3>
                         <Link href="/po" className="text-sm text-blue-600 font-medium hover:text-blue-800">ดูทั้งหมด</Link>
@@ -235,9 +281,9 @@ export default function MainDashboard() {
                                         <div className="text-right">
                                             <p className="font-bold text-slate-800">฿ {po.totalAmount?.toLocaleString(undefined, { minimumFractionDigits: 2 })}</p>
                                             <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${po.status === 'approved' ? 'bg-green-100 text-green-700' :
-                                                    po.status === 'rejected' ? 'bg-red-100 text-red-700' :
-                                                        po.status === 'pending' ? 'bg-orange-100 text-orange-700' :
-                                                            'bg-slate-100 text-slate-700'
+                                                po.status === 'rejected' ? 'bg-red-100 text-red-700' :
+                                                    po.status === 'pending' ? 'bg-orange-100 text-orange-700' :
+                                                        'bg-slate-100 text-slate-700'
                                                 }`}>
                                                 {po.status === 'approved' ? 'อนุมัติแล้ว' :
                                                     po.status === 'rejected' ? 'ไม่อนุมัติ' :
@@ -266,6 +312,15 @@ export default function MainDashboard() {
                             </div>
                         </Link>
 
+                        <Link href="/wc/create" className="w-full flex items-center justify-between p-4 bg-slate-50 rounded-lg border border-slate-200 hover:bg-emerald-50 hover:border-emerald-200 transition-colors group">
+                            <div className="flex items-center space-x-3">
+                                <div className="bg-white p-2 border border-slate-200 rounded text-emerald-600 group-hover:text-emerald-700">
+                                    <Briefcase size={20} />
+                                </div>
+                                <span className="font-medium text-slate-700 group-hover:text-emerald-800">สร้างใบจ้างงาน (WC)</span>
+                            </div>
+                        </Link>
+
                         <Link href="/vo/create" className="w-full flex items-center justify-between p-4 bg-slate-50 rounded-lg border border-slate-200 hover:bg-orange-50 hover:border-orange-200 transition-colors group">
                             <div className="flex items-center space-x-3">
                                 <div className="bg-white p-2 border border-slate-200 rounded text-orange-600">
@@ -283,6 +338,53 @@ export default function MainDashboard() {
                                 <span className="font-medium text-slate-700 group-hover:text-green-800">เพิ่มรายชื่อคู่ค้าใหม่</span>
                             </div>
                         </Link>
+                    </div>
+                </div>
+
+                {/* Recent WCs - Full width */}
+                <div className="bg-white rounded-xl border border-slate-200 shadow-sm lg:col-span-3">
+                    <div className="p-6 border-b border-slate-200 flex justify-between items-center">
+                        <h3 className="text-lg font-bold text-slate-800">ใบจ้างงาน (WC) ล่าสุด</h3>
+                        <Link href="/wc" className="text-sm text-emerald-600 font-medium hover:text-emerald-800">ดูทั้งหมด</Link>
+                    </div>
+                    <div className="p-0">
+                        {recentWCs.length === 0 ? (
+                            <div className="w-full text-center py-12 text-slate-500">
+                                <Briefcase className="w-10 h-10 mx-auto text-slate-300 mb-3" />
+                                <p>ไม่พบรายการใบจ้างงานล่าสุด</p>
+                                <Link href="/wc/create" className="text-sm text-emerald-600 font-medium mt-2 block hover:underline">
+                                    สร้างใบจ้างงานใหม่
+                                </Link>
+                            </div>
+                        ) : (
+                            <div className="divide-y divide-slate-100">
+                                {recentWCs.map(wc => (
+                                    <div key={wc.id} className="p-4 hover:bg-slate-50 flex items-center justify-between transition-colors">
+                                        <div className="flex items-center space-x-4">
+                                            <div className="w-10 h-10 bg-emerald-100 rounded-full flex items-center justify-center text-emerald-600">
+                                                <Briefcase size={20} />
+                                            </div>
+                                            <div>
+                                                <p className="font-semibold text-slate-900">{wc.wcNumber}</p>
+                                                <p className="text-sm text-slate-500">{wc.vendorName}{wc.title ? ` • ${wc.title}` : ''}</p>
+                                            </div>
+                                        </div>
+                                        <div className="text-right">
+                                            <p className="font-bold text-slate-800">฿ {wc.totalAmount?.toLocaleString(undefined, { minimumFractionDigits: 2 })}</p>
+                                            <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${wc.status === 'approved' ? 'bg-green-100 text-green-700' :
+                                                wc.status === 'rejected' ? 'bg-red-100 text-red-700' :
+                                                    wc.status === 'pending' ? 'bg-orange-100 text-orange-700' :
+                                                        'bg-slate-100 text-slate-700'
+                                                }`}>
+                                                {wc.status === 'approved' ? 'อนุมัติแล้ว' :
+                                                    wc.status === 'rejected' ? 'ไม่อนุมัติ' :
+                                                        wc.status === 'pending' ? 'รออนุมัติ' : 'ฉบับร่าง'}
+                                            </span>
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        )}
                     </div>
                 </div>
             </div>
