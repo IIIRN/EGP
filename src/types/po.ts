@@ -8,6 +8,13 @@ export interface POItem {
     isClosed?: boolean;
 }
 
+export interface DocumentSignature {
+    id?: string;
+    name?: string;
+    position?: string;
+    signatureUrl?: string;
+}
+
 export interface PurchaseOrder {
     id: string;
     poNumber: string;
@@ -26,5 +33,5 @@ export interface PurchaseOrder {
     updatedAt?: string;
     creditDays?: number;
     signatureId?: string;
-    signatureData?: unknown;
+    signatureData?: DocumentSignature | null;
 }

@@ -270,6 +270,7 @@ export default function EditPOPage({ params }: { params: Promise<{ id: string }>
                     unit: "",
                     unitPrice: normalizedProcessingFee,
                     amount: normalizedProcessingFee,
+                    isClosed: false,
                 });
             }
 

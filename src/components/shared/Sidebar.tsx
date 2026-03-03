@@ -103,7 +103,7 @@ export default function Sidebar({ isOpen = false, setIsOpen }: SidebarProps) {
                 {/* Logo Area */}
                 <div className="h-16 flex items-center justify-between px-6 border-b border-slate-800">
                     <div className="flex items-center">
-                        <span className="ml-3 text-lg font-bold tracking-wider text-slate-100"><span className="text-green-500">Powertec</span>จัดซื้อ-จ้าง</span>
+                        <span className="ml-3 text-lg font-bold tracking-wider text-slate-100"><span className="text-green-500">Powertec</span> จัดซื้อ-จ้าง</span>
                     </div>
                     {/* Close button for mobile */}
                     <button

@@ -260,6 +260,7 @@ export default function CreateWCPage() {
                     unit: "",
                     unitPrice: normalizedProcessingFee,
                     amount: normalizedProcessingFee,
+                    isClosed: false,
                 });
             }
 

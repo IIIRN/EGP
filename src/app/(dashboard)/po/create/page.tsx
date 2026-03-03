@@ -265,6 +265,7 @@ export default function CreatePOPage() {
                     unit: "",
                     unitPrice: normalizedProcessingFee,
                     amount: normalizedProcessingFee,
+                    isClosed: false,
                 });
             }
 

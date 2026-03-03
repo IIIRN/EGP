@@ -8,6 +8,13 @@ export interface WCItem {
     isClosed?: boolean;
 }
 
+export interface DocumentSignature {
+    id?: string;
+    name?: string;
+    position?: string;
+    signatureUrl?: string;
+}
+
 export interface WorkContract {
     id: string;
     wcNumber: string;
@@ -30,5 +37,5 @@ export interface WorkContract {
     createdAt?: unknown;
     updatedAt?: unknown;
     signatureId?: string;
-    signatureData?: unknown;
+    signatureData?: DocumentSignature | null;
 }

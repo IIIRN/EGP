@@ -245,6 +245,7 @@ export default function EditWCPage({ params }: { params: Promise<{ id: string }>
                     unit: "",
                     unitPrice: normalizedProcessingFee,
                     amount: normalizedProcessingFee,
+                    isClosed: false,
                 });
             }
 
