@@ -5,6 +5,7 @@ export interface WCItem {
     unit: string;
     unitPrice: number;
     amount: number;
+    isClosed?: boolean;
 }
 
 export interface WorkContract {
@@ -26,8 +27,8 @@ export interface WorkContract {
     paymentTerms?: string;  // เงื่อนไขการจ่าย เช่น "งวดที่ 1 = 50%, งวดที่ 2 = 50%"
     notes?: string;         // หมายเหตุ/ข้อกำหนดพิเศษ
     createdBy: string;
-    createdAt?: any;
-    updatedAt?: any;
+    createdAt?: unknown;
+    updatedAt?: unknown;
     signatureId?: string;
-    signatureData?: any;
+    signatureData?: unknown;
 }

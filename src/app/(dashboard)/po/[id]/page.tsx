@@ -1,7 +1,6 @@
 "use client";
 
 import { use, useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { ArrowLeft, CheckCircle, XCircle, Printer, FileText, Loader2, Edit } from "lucide-react";
 import { doc, getDoc, updateDoc, serverTimestamp } from "firebase/firestore";
@@ -9,10 +8,27 @@ import { db } from "@/lib/firebase";
 import { PurchaseOrder } from "@/types/po";
 import { useAuth } from "@/context/AuthContext";
 import { useProject } from "@/context/ProjectContext";
+import { splitProcessingFeeItem } from "@/lib/documentItems";
+
+type SignatureOption = {
+    id?: string;
+    name?: string;
+    position?: string;
+    signatureUrl?: string;
+};
+
+type CompanySettings = {
+    name: string;
+    address: string;
+    phone: string;
+    email: string;
+    logoUrl: string;
+    signatureUrl: string;
+    signatures: SignatureOption[];
+};
 
 export default function PODetailPage({ params }: { params: Promise<{ id: string }> }) {
     const resolvedParams = use(params);
-    const router = useRouter();
     const { userProfile } = useAuth();
     const { currentProject } = useProject();
 
@@ -20,14 +36,14 @@ export default function PODetailPage({ params }: { params: Promise<{ id: string 
     const [loading, setLoading] = useState(true);
     const [actionLoading, setActionLoading] = useState(false);
 
-    const [companySettings, setCompanySettings] = useState({
+    const [companySettings, setCompanySettings] = useState<CompanySettings>({
         name: "บริษัท พาวเวอร์เทค เอนจิเนียริ่ง จำกัด",
         address: "9/10 ถ.มิตรสาร ต.ประตูชัย อ.พระนครศรีอยุธยา จ.พระนครศรีอยุธยา 13000",
         phone: "083-995-5629, 083-995-4495",
         email: "Powertec.civil@gmail.com",
         logoUrl: "",
         signatureUrl: "",
-        signatures: [] as any[]
+        signatures: []
     });
 
     useEffect(() => {
@@ -38,7 +54,12 @@ export default function PODetailPage({ params }: { params: Promise<{ id: string 
                 const configRef = doc(db, "system_settings", "global_config");
                 const configSnap = await getDoc(configRef);
                 if (configSnap.exists() && configSnap.data().companySettings) {
-                    setCompanySettings(configSnap.data().companySettings);
+                    const settings = configSnap.data().companySettings as Partial<CompanySettings>;
+                    setCompanySettings((prev) => ({
+                        ...prev,
+                        ...settings,
+                        signatures: Array.isArray(settings.signatures) ? settings.signatures : prev.signatures,
+                    }));
                 }
 
                 // Fetch PO
@@ -130,6 +151,18 @@ export default function PODetailPage({ params }: { params: Promise<{ id: string 
 
     const isPending = po.status === "pending";
     const canApprove = userProfile?.role === "admin" || userProfile?.role === "pm";
+    const { items: displayItems, processingFee } = splitProcessingFeeItem(po.items);
+    const itemsTotalBeforeFee = displayItems.reduce((sum, item) => sum + (item.amount || 0), 0);
+
+    const formatCreatedAt = (value: unknown) => {
+        if (value && typeof value === "object" && "toDate" in value) {
+            const timestamp = value as { toDate?: () => Date };
+            if (typeof timestamp.toDate === "function") {
+                return timestamp.toDate().toLocaleDateString("th-TH");
+            }
+        }
+        return "N/A";
+    };
 
     return (
         <div className="max-w-4xl mx-auto space-y-6 print:space-y-0 print:m-0 print:w-full print:max-w-none">
@@ -230,7 +263,7 @@ export default function PODetailPage({ params }: { params: Promise<{ id: string 
                             <div className="col-span-8 border-b-2 border-black h-5 mr-10 leading-none">{po.vendorName}</div>
                             <div className="col-span-1 text-right">วันที่</div>
                             <div className="col-span-2 text-right border-b-2 border-black h-5 leading-none">
-                                {(po.createdAt as any)?.toDate().toLocaleDateString('th-TH') || 'N/A'}
+                                {formatCreatedAt(po.createdAt)}
                             </div>
 
                             <div className="col-span-1">เรื่อง</div>
@@ -265,17 +298,39 @@ export default function PODetailPage({ params }: { params: Promise<{ id: string 
                                 </tr>
                             </thead>
                             <tbody>
-                                {po.items.map((item, index) => (
+                                {displayItems.map((item, index) => (
                                     <tr key={item.id} className="align-top">
                                         <td className="border-x border-black py-1.5 px-1 text-center">{index + 1}</td>
                                         <td className="border-x border-black py-1.5 px-2">{item.description}</td>
                                         <td className="border-x border-black py-1.5 px-1 text-center">{item.quantity}</td>
                                         <td className="border-x border-black py-1.5 px-1 text-center">{item.unit}</td>
-                                        <td className="border-x border-black py-1.5 px-1 text-right">{item.unitPrice?.toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
+                                        <td className="border-x border-black py-1.5 px-1 text-right">
+                                            {item.isClosed ? "-" : item.unitPrice?.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                                        </td>
                                         <td className="border-x border-black py-1.5 px-1 text-right"></td>
-                                        <td className="border-x border-black py-1.5 px-2 text-right">{item.amount?.toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
+                                        <td className="border-x border-black py-1.5 px-2 text-right">
+                                            {item.isClosed ? "-" : item.amount?.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                                        </td>
                                     </tr>
                                 ))}
+                                <tr>
+                                    <td className="border-x border-black py-1.5 px-1 text-center font-bold">{displayItems.length + 1}</td>
+                                    <td className="border-x border-black py-1.5 px-2 font-bold">ราคารวม</td>
+                                    <td className="border-x border-black py-1.5 px-1 text-center"></td>
+                                    <td className="border-x border-black py-1.5 px-1 text-center"></td>
+                                    <td className="border-x border-black py-1.5 px-1 text-right"></td>
+                                    <td className="border-x border-black py-1.5 px-1 text-right"></td>
+                                    <td className="border-x border-black py-1.5 px-2 text-right font-bold">{itemsTotalBeforeFee.toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
+                                </tr>
+                                <tr>
+                                    <td className="border-x border-black py-1.5 px-1 text-center font-bold">{displayItems.length + 2}</td>
+                                    <td className="border-x border-black py-1.5 px-2 font-bold">ค่าดำเนินการ</td>
+                                    <td className="border-x border-black py-1.5 px-1 text-center"></td>
+                                    <td className="border-x border-black py-1.5 px-1 text-center"></td>
+                                    <td className="border-x border-black py-1.5 px-1 text-right"></td>
+                                    <td className="border-x border-black py-1.5 px-1 text-right"></td>
+                                    <td className="border-x border-black py-1.5 px-2 text-right font-bold">{processingFee.toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
+                                </tr>
                                 {/* Pad empty row for visual height */}
                                 <tr>
                                     <td className="border-x border-black h-[120px]"></td>
@@ -330,7 +385,7 @@ export default function PODetailPage({ params }: { params: Promise<{ id: string 
                                             <p className="font-bold text-xs mt-1">{po.signatureData.position || "ตำแหน่ง..............................."}</p>
                                         </div>
                                     ) : companySettings.signatures && companySettings.signatures.length > 0 ? (
-                                        companySettings.signatures.map((sig: any) => (
+                                        companySettings.signatures.map((sig) => (
                                             <div key={sig.id} className="space-y-1 flex flex-col items-center">
                                                 {sig.signatureUrl ? (
                                                     <div className="h-12 w-32 border-b border-black mb-1 flex items-end justify-center">

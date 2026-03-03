@@ -5,6 +5,7 @@ export interface POItem {
     unit: string;
     unitPrice: number;
     amount: number;
+    isClosed?: boolean;
 }
 
 export interface PurchaseOrder {
@@ -25,5 +26,5 @@ export interface PurchaseOrder {
     updatedAt?: string;
     creditDays?: number;
     signatureId?: string;
-    signatureData?: any;
+    signatureData?: unknown;
 }

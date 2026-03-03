@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import React, { createContext, useContext, useEffect, useState } from "react";
 import { collection, query, onSnapshot, orderBy } from "firebase/firestore";
@@ -40,20 +40,39 @@ export function ProjectProvider({ children }: { children: React.ReactNode }) {
             return;
         }
 
-        // In a real app, you might filter by user's authorized projects. 
+        // In a real app, you might filter by user's authorized projects.
         // Here we load all projects and order them.
         const q = query(collection(db, "projects"), orderBy("createdAt", "desc"));
 
         const unsubscribe = onSnapshot(q, (snapshot) => {
-            let projectData: Project[] = [];
-            snapshot.forEach((doc) => {
-                projectData.push({ id: doc.id, ...doc.data() } as Project);
-            });
+            const projectData: Project[] = snapshot.docs.map((doc) => ({
+                id: doc.id,
+                ...doc.data(),
+            } as Project));
 
             setAllProjects(projectData);
 
-            // Hide completed projects for the active selector
-            const activeProjects = projectData.filter(p => p.status !== "completed");
+            // Hide suspended/completed projects from selector across status variants.
+            const normalizeStatus = (status: unknown) =>
+                String(status ?? "")
+                    .trim()
+                    .toLowerCase()
+                    .replace(/[\s-]+/g, "_");
+            const hiddenStatuses = new Set([
+                "completed",
+                "complete",
+                "finished",
+                "closed",
+                "on_hold",
+                "suspended",
+                "suspend",
+                "\u0e40\u0e2a\u0e23\u0e47\u0e08\u0e2a\u0e34\u0e49\u0e19",
+                "\u0e23\u0e30\u0e07\u0e31\u0e1a",
+            ]);
+            const activeProjects = projectData.filter((p) => {
+                const normalizedStatus = normalizeStatus(p.status);
+                return !hiddenStatuses.has(normalizedStatus);
+            });
 
             setProjects(activeProjects);
 
@@ -61,7 +80,7 @@ export function ProjectProvider({ children }: { children: React.ReactNode }) {
             if (activeProjects.length > 0) {
                 setCurrentProject((prev) => {
                     if (!prev) return activeProjects[0];
-                    const exists = activeProjects.find(p => p.id === prev.id);
+                    const exists = activeProjects.find((p) => p.id === prev.id);
                     return exists || activeProjects[0];
                 });
             } else {

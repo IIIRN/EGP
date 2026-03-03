@@ -1,15 +1,65 @@
 "use client";
 
 import { useProject } from "@/context/ProjectContext";
-import { Building2, TrendingUp, Users, FileText, Activity, Wallet, AlertCircle, Briefcase } from "lucide-react";
+import { Building2, Users, FileText, Activity, Wallet, AlertCircle, Briefcase } from "lucide-react";
 import Link from "next/link";
 import { useAuth } from "@/context/AuthContext";
 import { useEffect, useState } from "react";
 import { collection, query, where, onSnapshot } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { PurchaseOrder } from "@/types/po";
-import { VariationOrder } from "@/types/vo";
 import { WorkContract } from "@/types/wc";
+
+const formatCurrency = (amount: number) =>
+    `฿ ${amount.toLocaleString(undefined, {
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2,
+    })}`;
+
+const getCreatedAtMillis = (value: unknown) => {
+    if (!value) return 0;
+
+    try {
+        if (typeof value === "object" && value) {
+            const timestamp = value as {
+                toDate?: () => Date;
+                toMillis?: () => number;
+                seconds?: number;
+                nanoseconds?: number;
+            };
+
+            if (typeof timestamp.toMillis === "function") {
+                const millis = timestamp.toMillis();
+                return Number.isFinite(millis) ? millis : 0;
+            }
+
+            if (typeof timestamp.toDate === "function") {
+                const date = timestamp.toDate();
+                return Number.isNaN(date.getTime()) ? 0 : date.getTime();
+            }
+
+            if (typeof timestamp.seconds === "number") {
+                return timestamp.seconds * 1000 + Math.floor((timestamp.nanoseconds ?? 0) / 1_000_000);
+            }
+        }
+
+        if (typeof value === "string" || typeof value === "number" || value instanceof Date) {
+            const date = new Date(value);
+            return Number.isNaN(date.getTime()) ? 0 : date.getTime();
+        }
+    } catch {
+        return 0;
+    }
+
+    return 0;
+};
+
+const getStatusMeta = (status?: string) => {
+    if (status === "approved") return { label: "อนุมัติแล้ว", className: "bg-emerald-50 text-emerald-700 border border-emerald-200" };
+    if (status === "rejected") return { label: "ไม่อนุมัติ", className: "bg-rose-50 text-rose-700 border border-rose-200" };
+    if (status === "pending") return { label: "รออนุมัติ", className: "bg-amber-50 text-amber-700 border border-amber-200" };
+    return { label: "ฉบับร่าง", className: "bg-slate-100 text-slate-700 border border-slate-200" };
+};
 
 export default function MainDashboard() {
     const { currentProject } = useProject();
@@ -52,8 +102,8 @@ export default function MainDashboard() {
 
             // Sort PO list client-side to show recent ones
             poList.sort((a, b) => {
-                const dateA = a.createdAt ? new Date((a.createdAt as any).toDate()).getTime() : 0;
-                const dateB = b.createdAt ? new Date((b.createdAt as any).toDate()).getTime() : 0;
+                const dateA = getCreatedAtMillis(a.createdAt);
+                const dateB = getCreatedAtMillis(b.createdAt);
                 return dateB - dateA;
             });
             setRecentPOs(poList.slice(0, 5));
@@ -81,8 +131,8 @@ export default function MainDashboard() {
             });
 
             wcList.sort((a, b) => {
-                const dateA = a.createdAt ? new Date((a.createdAt as any).toDate()).getTime() : 0;
-                const dateB = b.createdAt ? new Date((b.createdAt as any).toDate()).getTime() : 0;
+                const dateA = getCreatedAtMillis(a.createdAt);
+                const dateB = getCreatedAtMillis(b.createdAt);
                 return dateB - dateA;
             });
             setRecentWCs(wcList.slice(0, 5));
@@ -133,260 +183,232 @@ export default function MainDashboard() {
     // Percentages
     const usedPercentage = netBudget > 0 ? (totalUsed / netBudget) * 100 : 0;
     const isOverBudget = usedPercentage > 100;
+    const pendingApprovals = stats.pendingPO + stats.pendingWC + stats.pendingVO;
 
     return (
-        <div className="space-y-6">
+        <div className="space-y-6 rounded-3xl bg-gradient-to-br from-slate-50 via-white to-blue-50/40 p-1.5">
 
-            {/* Welcome Banner */}
-            <div className="bg-gradient-to-r from-blue-600 to-blue-800 rounded-2xl p-8 text-white shadow-lg relative overflow-hidden">
-                <div className="relative z-10 flex flex-col md:flex-row justify-between items-start md:items-center">
-                    <div className="mb-6 md:mb-0">
-                        <h1 className="text-3xl font-bold mb-2">ยินดีต้อนรับกลับมา, {userProfile?.displayName || userProfile?.email || "ผู้ใช้งาน"}!</h1>
-                        <p className="text-blue-100 max-w-xl">
-                            โครงการ: {" "}
-                            <span className="font-semibold text-white bg-blue-500/30 px-3 py-1 rounded-full ml-1">
-                                {currentProject ? currentProject.name : "ยังไม่ได้เลือกโครงการ"}
-                            </span>
+            <section className="relative overflow-hidden rounded-2xl border border-slate-200/80 bg-gradient-to-r from-white via-slate-50 to-blue-50/60 p-6 shadow-sm md:p-8">
+                <div className="pointer-events-none absolute right-0 top-0 h-40 w-40 rounded-full bg-blue-100/60 blur-3xl" />
+                <div className="relative grid grid-cols-1 gap-4 lg:grid-cols-[1fr_auto] lg:items-start">
+                    <div className="space-y-3">
+                        <p className="text-xs font-semibold uppercase tracking-[0.22em] text-slate-500">Project Control Center</p>
+                        <h1 className="text-2xl font-semibold text-slate-900 md:text-3xl">สรุปภาพรวมงานจัดซื้อและบริหารสัญญา</h1>
+                        <p className="text-sm text-slate-600">
+                            ยินดีต้อนรับ {userProfile?.displayName || userProfile?.email || "ผู้ใช้งาน"} ติดตามสถานะเอกสารและงบประมาณของโครงการในมุมมองเดียว
                         </p>
+                        <div className="inline-flex items-center gap-2 rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-sm text-blue-900">
+                            <Building2 size={16} className="text-blue-600" />
+                            <span className="font-medium">{currentProject ? currentProject.name : "ยังไม่ได้เลือกโครงการ"}</span>
+                        </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                        <div className="rounded-xl border border-blue-200 bg-blue-50/70 p-4">
+                            <p className="text-xs uppercase tracking-[0.14em] text-slate-500">Pending Approvals</p>
+                            <p className="mt-2 text-2xl font-semibold text-slate-900">{pendingApprovals}</p>
+                            <p className="mt-1 text-xs text-slate-500">PO, WC และ VO ที่รอดำเนินการ</p>
+                        </div>
+                        <div className="rounded-xl border border-emerald-200 bg-emerald-50/70 p-4">
+                            <p className="text-xs uppercase tracking-[0.14em] text-slate-500">Approved Commitments</p>
+                            <p className="mt-2 text-2xl font-semibold text-slate-900">{formatCurrency(totalUsed)}</p>
+                            <p className="mt-1 text-xs text-slate-500">มูลค่าอนุมัติ PO + WC</p>
+                        </div>
                     </div>
                 </div>
-                <Building2 className="absolute -bottom-6 -right-6 w-48 h-48 text-white opacity-10" />
-            </div>
+            </section>
 
             {/* Financial Overview Card */}
             {currentProject && (
-                <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-6 relative overflow-hidden">
-                    <div className="flex justify-between items-center mb-6">
-                        <h3 className="text-lg font-bold text-slate-800 flex items-center">
-                            <Wallet className="mr-2 text-blue-600" size={24} /> สรุปงบประมาณโครงการ (Budget Tracking)
+                <section className="rounded-2xl border border-slate-200 bg-gradient-to-b from-white to-slate-50/50 p-6 shadow-sm">
+                    <div className="mb-6 flex items-center justify-between">
+                        <h3 className="flex items-center text-lg font-semibold text-slate-900">
+                            <Wallet className="mr-2 text-blue-600" size={20} />
+                            Budget Overview
                         </h3>
+                        {isOverBudget && (
+                            <span className="inline-flex items-center rounded-md border border-rose-200 bg-rose-50 px-2.5 py-1 text-xs font-semibold text-rose-700">
+                                <AlertCircle size={14} className="mr-1" />
+                                งบประมาณเกินแผน
+                            </span>
+                        )}
                     </div>
 
-                    <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
-                        <div className="space-y-1">
-                            <p className="text-sm text-slate-500">งบประมาณตั้งต้น (Initial)</p>
-                            <p className="text-xl font-semibold text-slate-800">฿ {initialBudget.toLocaleString(undefined, { minimumFractionDigits: 2 })}</p>
+                    <div className="grid grid-cols-1 gap-4 lg:grid-cols-4">
+                        <div className="rounded-xl border border-blue-200 bg-blue-50/60 p-4">
+                            <p className="text-xs uppercase tracking-[0.14em] text-slate-500">Initial Budget</p>
+                            <p className="mt-2 text-xl font-semibold text-slate-900">{formatCurrency(initialBudget)}</p>
                         </div>
-                        <div className="space-y-1 border-l border-slate-200 pl-6">
-                            <p className="text-sm text-slate-500">งานเพิ่ม-ลด (VO Impact)</p>
-                            <p className={`text-xl font-semibold ${stats.approvedVOTotal > 0 ? 'text-green-600' : stats.approvedVOTotal < 0 ? 'text-red-500' : 'text-slate-500'}`}>
-                                {stats.approvedVOTotal > 0 ? '+' : ''}฿ {stats.approvedVOTotal.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                        <div className="rounded-xl border border-violet-200 bg-violet-50/60 p-4">
+                            <p className="text-xs uppercase tracking-[0.14em] text-slate-500">VO Impact</p>
+                            <p className={`mt-2 text-xl font-semibold ${stats.approvedVOTotal > 0 ? "text-emerald-700" : stats.approvedVOTotal < 0 ? "text-rose-700" : "text-slate-900"}`}>
+                                {stats.approvedVOTotal > 0 ? "+" : ""}
+                                {formatCurrency(stats.approvedVOTotal)}
                             </p>
                         </div>
-                        <div className="space-y-1 border-l border-slate-200 pl-6">
-                            <p className="text-sm text-slate-500">สั่งซื้อ+จ้างงาน (PO+WC)</p>
-                            <p className="text-xl font-semibold text-orange-600">฿ {totalUsed.toLocaleString(undefined, { minimumFractionDigits: 2 })}</p>
-                            <p className="text-xs text-slate-400 mt-0.5">PO ฿{stats.approvedPOTotal.toLocaleString()} | WC ฿{stats.approvedWCTotal.toLocaleString()}</p>
+                        <div className="rounded-xl border border-amber-200 bg-amber-50/60 p-4">
+                            <p className="text-xs uppercase tracking-[0.14em] text-slate-500">Committed</p>
+                            <p className="mt-2 text-xl font-semibold text-slate-900">{formatCurrency(totalUsed)}</p>
+                            <p className="mt-1 text-xs text-slate-500">PO {formatCurrency(stats.approvedPOTotal)} | WC {formatCurrency(stats.approvedWCTotal)}</p>
                         </div>
-                        <div className="space-y-1 border-l border-slate-200 pl-6 bg-slate-50 p-3 rounded-lg -m-3">
-                            <p className="text-sm font-medium text-slate-700">งบประมาณคงเหลือ (Available)</p>
-                            <p className={`text-2xl font-bold ${isOverBudget ? 'text-red-600' : 'text-blue-600'}`}>
-                                ฿ {availableBudget.toLocaleString(undefined, { minimumFractionDigits: 2 })}
-                            </p>
+                        <div className="rounded-xl border border-slate-200 bg-slate-900 p-4 text-white">
+                            <p className="text-xs uppercase tracking-[0.14em] text-slate-300">Available Budget</p>
+                            <p className="mt-2 text-2xl font-semibold">{formatCurrency(availableBudget)}</p>
                         </div>
                     </div>
 
                     {/* Progress Bar */}
-                    <div className="mt-8">
-                        <div className="flex justify-between text-sm mb-2">
-                            <span className="font-semibold text-slate-700">การใช้อยู่ที่ {usedPercentage.toFixed(1)}% ของงบรวม</span>
-                            {isOverBudget && <span className="font-bold text-red-600 flex items-center"><AlertCircle size={16} className="mr-1" /> งบบานปลาย</span>}
+                    <div className="mt-6 rounded-xl border border-blue-100 bg-blue-50/50 p-4">
+                        <div className="mb-2 flex justify-between text-sm">
+                            <span className="font-medium text-slate-700">ใช้งบประมาณแล้ว {usedPercentage.toFixed(1)}%</span>
+                            <span className={`font-semibold ${isOverBudget ? "text-rose-700" : "text-slate-700"}`}>{formatCurrency(netBudget)} วงเงินรวม</span>
                         </div>
-                        <div className="w-full bg-slate-100 rounded-full h-3">
+                        <div className="h-2.5 w-full overflow-hidden rounded-full bg-slate-200">
                             <div
-                                className={`bg-blue-600 h-3 rounded-full ${isOverBudget ? 'bg-red-500' : 'bg-blue-500'} transition-all duration-500`}
+                                className={`h-2.5 rounded-full transition-all duration-500 ${isOverBudget ? "bg-rose-500" : "bg-blue-600"}`}
                                 style={{ width: `${Math.min(usedPercentage, 100)}%` }}
-                            ></div>
+                            />
                         </div>
                     </div>
-                </div>
+                </section>
             )}
 
             {/* Quick Stats Grid */}
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-
-                <div className="bg-white rounded-xl p-6 border border-slate-200 shadow-sm flex items-center space-x-4">
-                    <div className="bg-blue-100 p-3 rounded-lg text-blue-600">
-                        <FileText size={24} />
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
+                <div className="rounded-xl border border-blue-200 bg-gradient-to-b from-white to-blue-50/40 p-5 shadow-sm">
+                    <div className="mb-4 inline-flex rounded-lg border border-blue-200 bg-blue-50 p-2 text-blue-700">
+                        <FileText size={18} />
                     </div>
-                    <div>
-                        <p className="text-sm font-medium text-slate-500">PO รออนุมัติ</p>
-                        <h3 className="text-2xl font-bold text-slate-900">{stats.pendingPO} <span className="text-sm font-normal text-slate-500">รายการ</span></h3>
-                    </div>
+                    <p className="text-sm text-slate-500">PO รออนุมัติ</p>
+                    <p className="mt-1 text-2xl font-semibold text-slate-900">{stats.pendingPO}</p>
                 </div>
 
-                <div className="bg-white rounded-xl p-6 border border-slate-200 shadow-sm flex items-center space-x-4">
-                    <div className="bg-emerald-100 p-3 rounded-lg text-emerald-600">
-                        <Briefcase size={24} />
+                <div className="rounded-xl border border-emerald-200 bg-gradient-to-b from-white to-emerald-50/40 p-5 shadow-sm">
+                    <div className="mb-4 inline-flex rounded-lg border border-emerald-200 bg-emerald-50 p-2 text-emerald-700">
+                        <Briefcase size={18} />
                     </div>
-                    <div>
-                        <p className="text-sm font-medium text-slate-500">WC รออนุมัติ</p>
-                        <h3 className="text-2xl font-bold text-slate-900">{stats.pendingWC} <span className="text-sm font-normal text-slate-500">รายการ</span></h3>
-                    </div>
+                    <p className="text-sm text-slate-500">WC รออนุมัติ</p>
+                    <p className="mt-1 text-2xl font-semibold text-slate-900">{stats.pendingWC}</p>
                 </div>
 
-                <div className="bg-white rounded-xl p-6 border border-slate-200 shadow-sm flex items-center space-x-4">
-                    <div className="bg-purple-100 p-3 rounded-lg text-purple-600">
-                        <Activity size={24} />
+                <div className="rounded-xl border border-amber-200 bg-gradient-to-b from-white to-amber-50/40 p-5 shadow-sm">
+                    <div className="mb-4 inline-flex rounded-lg border border-amber-200 bg-amber-50 p-2 text-amber-700">
+                        <Activity size={18} />
                     </div>
-                    <div>
-                        <p className="text-sm font-medium text-slate-500">VO รออนุมัติ</p>
-                        <h3 className="text-2xl font-bold text-slate-900">{stats.pendingVO} <span className="text-sm font-normal text-slate-500">รายการ</span></h3>
-                    </div>
+                    <p className="text-sm text-slate-500">VO รออนุมัติ</p>
+                    <p className="mt-1 text-2xl font-semibold text-slate-900">{stats.pendingVO}</p>
                 </div>
 
-                <div className="bg-white rounded-xl p-6 border border-slate-200 shadow-sm flex items-center space-x-4">
-                    <div className="bg-green-100 p-3 rounded-lg text-green-600">
-                        <Users size={24} />
+                <div className="rounded-xl border border-violet-200 bg-gradient-to-b from-white to-violet-50/40 p-5 shadow-sm">
+                    <div className="mb-4 inline-flex rounded-lg border border-violet-200 bg-violet-50 p-2 text-violet-700">
+                        <Users size={18} />
                     </div>
-                    <div>
-                        <p className="text-sm font-medium text-slate-500">คู่ค้าทั้งหมด</p>
-                        <h3 className="text-2xl font-bold text-slate-900">{stats.totalVendors} <span className="text-sm font-normal text-slate-500">บริษัท</span></h3>
-                    </div>
+                    <p className="text-sm text-slate-500">คู่ค้าใช้งานอยู่</p>
+                    <p className="mt-1 text-2xl font-semibold text-slate-900">{stats.totalVendors}</p>
                 </div>
-
             </div>
 
             {/* Main Grid area */}
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-
-                {/* Recent POs */}
-                <div className="bg-white rounded-xl border border-slate-200 shadow-sm lg:col-span-2">
-                    <div className="p-6 border-b border-slate-200 flex justify-between items-center">
-                        <h3 className="text-lg font-bold text-slate-800">ใบสั่งซื้อ (PO) ล่าสุด</h3>
-                        <Link href="/po" className="text-sm text-blue-600 font-medium hover:text-blue-800">ดูทั้งหมด</Link>
-                    </div>
-                    <div className="p-0">
+            <div className="grid grid-cols-1 gap-6 xl:grid-cols-12">
+                <div className="space-y-6 xl:col-span-8">
+                    <div className="rounded-2xl border border-slate-200 bg-white shadow-sm">
+                        <div className="flex items-center justify-between border-b border-blue-100 bg-gradient-to-r from-blue-50/60 to-transparent px-6 py-4">
+                            <h3 className="text-base font-semibold text-slate-900">Purchase Orders ล่าสุด</h3>
+                            <Link href="/po" className="text-sm font-medium text-blue-700 hover:text-blue-900">ดูทั้งหมด</Link>
+                        </div>
                         {recentPOs.length === 0 ? (
-                            <div className="w-full text-center py-12 text-slate-500">
-                                <FileText className="w-10 h-10 mx-auto text-slate-300 mb-3" />
-                                <p>ไม่พบรายการใบสั่งซื้อล่าสุด</p>
-                                <Link href="/po/create" className="text-sm text-blue-600 font-medium mt-2 block hover:underline">
+                            <div className="px-6 py-12 text-center text-slate-500">
+                                <FileText className="mx-auto mb-3 h-9 w-9 text-slate-300" />
+                                <p className="text-sm">ไม่พบรายการใบสั่งซื้อล่าสุด</p>
+                                <Link href="/po/create" className="mt-2 inline-block text-sm font-medium text-slate-700 hover:underline">
                                     สร้างใบสั่งซื้อใหม่
                                 </Link>
                             </div>
                         ) : (
                             <div className="divide-y divide-slate-100">
-                                {recentPOs.map(po => (
-                                    <div key={po.id} className="p-4 hover:bg-slate-50 flex items-center justify-between transition-colors">
-                                        <div className="flex items-center space-x-4">
-                                            <div className="w-10 h-10 bg-blue-100 rounded-full flex items-center justify-center text-blue-600">
-                                                <FileText size={20} />
+                                {recentPOs.map((po) => {
+                                    const statusMeta = getStatusMeta(po.status);
+                                    return (
+                                        <div key={po.id} className="flex items-center justify-between px-6 py-4 transition-colors hover:bg-blue-50/40">
+                                            <div className="min-w-0">
+                                                <p className="font-medium text-slate-900">{po.poNumber}</p>
+                                                <p className="truncate text-sm text-slate-500">{po.vendorName || "-"}</p>
                                             </div>
-                                            <div>
-                                                <p className="font-semibold text-slate-900">{po.poNumber}</p>
-                                                <p className="text-sm text-slate-500">{po.vendorName}</p>
+                                            <div className="text-right">
+                                                <p className="font-semibold text-slate-900">{formatCurrency(po.totalAmount || 0)}</p>
+                                                <span className={`mt-1 inline-block rounded-md px-2 py-0.5 text-xs font-medium ${statusMeta.className}`}>
+                                                    {statusMeta.label}
+                                                </span>
                                             </div>
                                         </div>
-                                        <div className="text-right">
-                                            <p className="font-bold text-slate-800">฿ {po.totalAmount?.toLocaleString(undefined, { minimumFractionDigits: 2 })}</p>
-                                            <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${po.status === 'approved' ? 'bg-green-100 text-green-700' :
-                                                po.status === 'rejected' ? 'bg-red-100 text-red-700' :
-                                                    po.status === 'pending' ? 'bg-orange-100 text-orange-700' :
-                                                        'bg-slate-100 text-slate-700'
-                                                }`}>
-                                                {po.status === 'approved' ? 'อนุมัติแล้ว' :
-                                                    po.status === 'rejected' ? 'ไม่อนุมัติ' :
-                                                        po.status === 'pending' ? 'รออนุมัติ' : 'ฉบับร่าง'}
-                                            </span>
-                                        </div>
-                                    </div>
-                                ))}
+                                    );
+                                })}
                             </div>
                         )}
                     </div>
-                </div>
 
-                {/* Quick Shortcuts */}
-                <div className="bg-white rounded-xl border border-slate-200 shadow-sm">
-                    <div className="p-6 border-b border-slate-200">
-                        <h3 className="text-lg font-bold text-slate-800">เมนูด่วน</h3>
-                    </div>
-                    <div className="p-6 space-y-4">
-                        <Link href="/po/create" className="w-full flex items-center justify-between p-4 bg-slate-50 rounded-lg border border-slate-200 hover:bg-blue-50 hover:border-blue-200 transition-colors group">
-                            <div className="flex items-center space-x-3">
-                                <div className="bg-white p-2 border border-slate-200 rounded text-blue-600 group-hover:text-blue-700">
-                                    <FileText size={20} />
-                                </div>
-                                <span className="font-medium text-slate-700 group-hover:text-blue-800">สร้างใบสั่งซื้อ (PO)</span>
-                            </div>
-                        </Link>
-
-                        <Link href="/wc/create" className="w-full flex items-center justify-between p-4 bg-slate-50 rounded-lg border border-slate-200 hover:bg-emerald-50 hover:border-emerald-200 transition-colors group">
-                            <div className="flex items-center space-x-3">
-                                <div className="bg-white p-2 border border-slate-200 rounded text-emerald-600 group-hover:text-emerald-700">
-                                    <Briefcase size={20} />
-                                </div>
-                                <span className="font-medium text-slate-700 group-hover:text-emerald-800">สร้างใบจ้างงาน (WC)</span>
-                            </div>
-                        </Link>
-
-                        <Link href="/vo/create" className="w-full flex items-center justify-between p-4 bg-slate-50 rounded-lg border border-slate-200 hover:bg-orange-50 hover:border-orange-200 transition-colors group">
-                            <div className="flex items-center space-x-3">
-                                <div className="bg-white p-2 border border-slate-200 rounded text-orange-600">
-                                    <Activity size={20} />
-                                </div>
-                                <span className="font-medium text-slate-700 group-hover:text-orange-800">สร้างงานเพิ่ม-ลด (VO)</span>
-                            </div>
-                        </Link>
-
-                        <Link href="/vendors/create" className="w-full flex items-center justify-between p-4 bg-slate-50 rounded-lg border border-slate-200 hover:bg-green-50 hover:border-green-200 transition-colors group">
-                            <div className="flex items-center space-x-3">
-                                <div className="bg-white p-2 border border-slate-200 rounded text-green-600">
-                                    <Users size={20} />
-                                </div>
-                                <span className="font-medium text-slate-700 group-hover:text-green-800">เพิ่มรายชื่อคู่ค้าใหม่</span>
-                            </div>
-                        </Link>
-                    </div>
-                </div>
-
-                {/* Recent WCs - Full width */}
-                <div className="bg-white rounded-xl border border-slate-200 shadow-sm lg:col-span-3">
-                    <div className="p-6 border-b border-slate-200 flex justify-between items-center">
-                        <h3 className="text-lg font-bold text-slate-800">ใบจ้างงาน (WC) ล่าสุด</h3>
-                        <Link href="/wc" className="text-sm text-emerald-600 font-medium hover:text-emerald-800">ดูทั้งหมด</Link>
-                    </div>
-                    <div className="p-0">
+                    <div className="rounded-2xl border border-slate-200 bg-white shadow-sm">
+                        <div className="flex items-center justify-between border-b border-emerald-100 bg-gradient-to-r from-emerald-50/60 to-transparent px-6 py-4">
+                            <h3 className="text-base font-semibold text-slate-900">Work Contracts ล่าสุด</h3>
+                            <Link href="/wc" className="text-sm font-medium text-emerald-700 hover:text-emerald-900">ดูทั้งหมด</Link>
+                        </div>
                         {recentWCs.length === 0 ? (
-                            <div className="w-full text-center py-12 text-slate-500">
-                                <Briefcase className="w-10 h-10 mx-auto text-slate-300 mb-3" />
-                                <p>ไม่พบรายการใบจ้างงานล่าสุด</p>
-                                <Link href="/wc/create" className="text-sm text-emerald-600 font-medium mt-2 block hover:underline">
+                            <div className="px-6 py-12 text-center text-slate-500">
+                                <Briefcase className="mx-auto mb-3 h-9 w-9 text-slate-300" />
+                                <p className="text-sm">ไม่พบรายการใบจ้างงานล่าสุด</p>
+                                <Link href="/wc/create" className="mt-2 inline-block text-sm font-medium text-slate-700 hover:underline">
                                     สร้างใบจ้างงานใหม่
                                 </Link>
                             </div>
                         ) : (
                             <div className="divide-y divide-slate-100">
-                                {recentWCs.map(wc => (
-                                    <div key={wc.id} className="p-4 hover:bg-slate-50 flex items-center justify-between transition-colors">
-                                        <div className="flex items-center space-x-4">
-                                            <div className="w-10 h-10 bg-emerald-100 rounded-full flex items-center justify-center text-emerald-600">
-                                                <Briefcase size={20} />
+                                {recentWCs.map((wc) => {
+                                    const statusMeta = getStatusMeta(wc.status);
+                                    return (
+                                        <div key={wc.id} className="flex items-center justify-between px-6 py-4 transition-colors hover:bg-emerald-50/40">
+                                            <div className="min-w-0">
+                                                <p className="font-medium text-slate-900">{wc.wcNumber}</p>
+                                                <p className="truncate text-sm text-slate-500">{wc.vendorName || "-"}{wc.title ? ` • ${wc.title}` : ""}</p>
                                             </div>
-                                            <div>
-                                                <p className="font-semibold text-slate-900">{wc.wcNumber}</p>
-                                                <p className="text-sm text-slate-500">{wc.vendorName}{wc.title ? ` • ${wc.title}` : ''}</p>
+                                            <div className="text-right">
+                                                <p className="font-semibold text-slate-900">{formatCurrency(wc.totalAmount || 0)}</p>
+                                                <span className={`mt-1 inline-block rounded-md px-2 py-0.5 text-xs font-medium ${statusMeta.className}`}>
+                                                    {statusMeta.label}
+                                                </span>
                                             </div>
                                         </div>
-                                        <div className="text-right">
-                                            <p className="font-bold text-slate-800">฿ {wc.totalAmount?.toLocaleString(undefined, { minimumFractionDigits: 2 })}</p>
-                                            <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${wc.status === 'approved' ? 'bg-green-100 text-green-700' :
-                                                wc.status === 'rejected' ? 'bg-red-100 text-red-700' :
-                                                    wc.status === 'pending' ? 'bg-orange-100 text-orange-700' :
-                                                        'bg-slate-100 text-slate-700'
-                                                }`}>
-                                                {wc.status === 'approved' ? 'อนุมัติแล้ว' :
-                                                    wc.status === 'rejected' ? 'ไม่อนุมัติ' :
-                                                        wc.status === 'pending' ? 'รออนุมัติ' : 'ฉบับร่าง'}
-                                            </span>
-                                        </div>
-                                    </div>
-                                ))}
+                                    );
+                                })}
                             </div>
                         )}
                     </div>
                 </div>
+
+                <aside className="xl:col-span-4">
+                    <div className="rounded-2xl border border-slate-200 bg-white shadow-sm">
+                        <div className="border-b border-violet-100 bg-gradient-to-r from-violet-50/60 to-transparent px-6 py-4">
+                            <h3 className="text-base font-semibold text-slate-900">เมนูด่วน</h3>
+                        </div>
+                        <div className="space-y-3 p-4">
+                            <Link href="/po/create" className="flex items-center gap-3 rounded-lg border border-blue-200 bg-blue-50/40 px-4 py-3 text-sm font-medium text-blue-900 transition-colors hover:bg-blue-50">
+                                <FileText size={16} className="text-blue-600" />
+                                สร้างใบสั่งซื้อ (PO)
+                            </Link>
+                            <Link href="/wc/create" className="flex items-center gap-3 rounded-lg border border-emerald-200 bg-emerald-50/40 px-4 py-3 text-sm font-medium text-emerald-900 transition-colors hover:bg-emerald-50">
+                                <Briefcase size={16} className="text-emerald-600" />
+                                สร้างใบจ้างงาน (WC)
+                            </Link>
+                            <Link href="/vo/create" className="flex items-center gap-3 rounded-lg border border-amber-200 bg-amber-50/40 px-4 py-3 text-sm font-medium text-amber-900 transition-colors hover:bg-amber-50">
+                                <Activity size={16} className="text-amber-600" />
+                                สร้างงานเพิ่ม-ลด (VO)
+                            </Link>
+                            <Link href="/vendors/create" className="flex items-center gap-3 rounded-lg border border-violet-200 bg-violet-50/40 px-4 py-3 text-sm font-medium text-violet-900 transition-colors hover:bg-violet-50">
+                                <Users size={16} className="text-violet-600" />
+                                เพิ่มรายชื่อคู่ค้า
+                            </Link>
+                        </div>
+                    </div>
+                </aside>
             </div>
 
         </div>

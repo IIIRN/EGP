@@ -1,7 +1,6 @@
 "use client";
 
 import { use, useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { ArrowLeft, CheckCircle, XCircle, Printer, FileText, Loader2, Edit } from "lucide-react";
 import { doc, getDoc, updateDoc, serverTimestamp } from "firebase/firestore";
@@ -9,10 +8,27 @@ import { db } from "@/lib/firebase";
 import { WorkContract } from "@/types/wc";
 import { useAuth } from "@/context/AuthContext";
 import { useProject } from "@/context/ProjectContext";
+import { splitProcessingFeeItem } from "@/lib/documentItems";
+
+type SignatureOption = {
+    id?: string;
+    name?: string;
+    position?: string;
+    signatureUrl?: string;
+};
+
+type CompanySettings = {
+    name: string;
+    address: string;
+    phone: string;
+    email: string;
+    logoUrl: string;
+    signatureUrl: string;
+    signatures: SignatureOption[];
+};
 
 export default function WCDetailPage({ params }: { params: Promise<{ id: string }> }) {
     const resolvedParams = use(params);
-    const router = useRouter();
     const { userProfile } = useAuth();
     const { currentProject } = useProject();
 
@@ -20,14 +36,14 @@ export default function WCDetailPage({ params }: { params: Promise<{ id: string 
     const [loading, setLoading] = useState(true);
     const [actionLoading, setActionLoading] = useState(false);
 
-    const [companySettings, setCompanySettings] = useState({
+    const [companySettings, setCompanySettings] = useState<CompanySettings>({
         name: "บริษัท พาวเวอร์เทค เอนจิเนียริ่ง จำกัด",
         address: "9/10 ถ.มิตรสาร ต.ประตูชัย อ.พระนครศรีอยุธยา จ.พระนครศรีอยุธยา 13000",
         phone: "083-995-5629, 083-995-4495",
         email: "Powertec.civil@gmail.com",
         logoUrl: "",
         signatureUrl: "",
-        signatures: [] as any[]
+        signatures: []
     });
 
     useEffect(() => {
@@ -37,7 +53,12 @@ export default function WCDetailPage({ params }: { params: Promise<{ id: string 
                 const configRef = doc(db, "system_settings", "global_config");
                 const configSnap = await getDoc(configRef);
                 if (configSnap.exists() && configSnap.data().companySettings) {
-                    setCompanySettings(configSnap.data().companySettings);
+                    const settings = configSnap.data().companySettings as Partial<CompanySettings>;
+                    setCompanySettings((prev) => ({
+                        ...prev,
+                        ...settings,
+                        signatures: Array.isArray(settings.signatures) ? settings.signatures : prev.signatures,
+                    }));
                 }
 
                 const docRef = doc(db, "work_contracts", resolvedParams.id);
@@ -103,6 +124,33 @@ export default function WCDetailPage({ params }: { params: Promise<{ id: string 
         }
     };
 
+    const formatCreatedAt = (value: unknown) => {
+        try {
+            if (value && typeof value === "object" && "toDate" in value) {
+                const timestamp = value as { toDate?: () => Date };
+                if (typeof timestamp.toDate === "function") {
+                    return timestamp.toDate().toLocaleDateString("th-TH");
+                }
+            }
+            if (value && typeof value === "object" && "seconds" in value) {
+                const unixTimestamp = value as { seconds?: number; nanoseconds?: number };
+                if (typeof unixTimestamp.seconds === "number") {
+                    const millis = (unixTimestamp.seconds * 1000) + Math.floor((unixTimestamp.nanoseconds ?? 0) / 1_000_000);
+                    return new Date(millis).toLocaleDateString("th-TH");
+                }
+            }
+            if (typeof value === "string" || typeof value === "number" || value instanceof Date) {
+                const date = new Date(value);
+                if (!Number.isNaN(date.getTime())) {
+                    return date.toLocaleDateString("th-TH");
+                }
+            }
+        } catch {
+            // Ignore malformed date values and show fallback.
+        }
+        return "N/A";
+    };
+
     if (loading) {
         return (
             <div className="flex flex-col items-center justify-center p-12">
@@ -125,6 +173,8 @@ export default function WCDetailPage({ params }: { params: Promise<{ id: string 
 
     const isPending = wc.status === "pending";
     const canApprove = userProfile?.role === "admin" || userProfile?.role === "pm";
+    const { items: displayItems, processingFee } = splitProcessingFeeItem(wc.items);
+    const itemsTotalBeforeFee = displayItems.reduce((sum, item) => sum + (item.amount || 0), 0);
 
     return (
         <div className="max-w-4xl mx-auto space-y-6 print:space-y-0 print:m-0 print:w-full print:max-w-none">
@@ -224,7 +274,7 @@ export default function WCDetailPage({ params }: { params: Promise<{ id: string 
                             <div className="col-span-8 border-b-2 border-black h-5 mr-10 leading-none">{wc.vendorName}</div>
                             <div className="col-span-1 text-right">วันที่</div>
                             <div className="col-span-2 text-right border-b-2 border-black h-5 leading-none">
-                                {(wc.createdAt as any)?.toDate().toLocaleDateString('th-TH') || 'N/A'}
+                                {formatCreatedAt(wc.createdAt)}
                             </div>
 
                             <div className="col-span-1">เรื่อง</div>
@@ -262,17 +312,39 @@ export default function WCDetailPage({ params }: { params: Promise<{ id: string 
                                 </tr>
                             </thead>
                             <tbody>
-                                {wc.items.map((item, index) => (
+                                {displayItems.map((item, index) => (
                                     <tr key={item.id} className="align-top">
                                         <td className="border-x border-black py-1.5 px-1 text-center">{index + 1}</td>
                                         <td className="border-x border-black py-1.5 px-2">{item.description}</td>
                                         <td className="border-x border-black py-1.5 px-1 text-center">{item.quantity}</td>
                                         <td className="border-x border-black py-1.5 px-1 text-center">{item.unit}</td>
                                         <td className="border-x border-black py-1.5 px-1 text-right"></td>
-                                        <td className="border-x border-black py-1.5 px-1 text-right">{item.unitPrice?.toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
-                                        <td className="border-x border-black py-1.5 px-2 text-right">{item.amount?.toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
+                                        <td className="border-x border-black py-1.5 px-1 text-right">
+                                            {item.isClosed ? "-" : item.unitPrice?.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                                        </td>
+                                        <td className="border-x border-black py-1.5 px-2 text-right">
+                                            {item.isClosed ? "-" : item.amount?.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                                        </td>
                                     </tr>
                                 ))}
+                                <tr>
+                                    <td className="border-x border-black py-1.5 px-1 text-center font-bold">{displayItems.length + 1}</td>
+                                    <td className="border-x border-black py-1.5 px-2 font-bold">ราคารวม</td>
+                                    <td className="border-x border-black py-1.5 px-1 text-center"></td>
+                                    <td className="border-x border-black py-1.5 px-1 text-center"></td>
+                                    <td className="border-x border-black py-1.5 px-1 text-right"></td>
+                                    <td className="border-x border-black py-1.5 px-1 text-right"></td>
+                                    <td className="border-x border-black py-1.5 px-2 text-right font-bold">{itemsTotalBeforeFee.toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
+                                </tr>
+                                <tr>
+                                    <td className="border-x border-black py-1.5 px-1 text-center font-bold">{displayItems.length + 2}</td>
+                                    <td className="border-x border-black py-1.5 px-2 font-bold">ค่าดำเนินการ</td>
+                                    <td className="border-x border-black py-1.5 px-1 text-center"></td>
+                                    <td className="border-x border-black py-1.5 px-1 text-center"></td>
+                                    <td className="border-x border-black py-1.5 px-1 text-right"></td>
+                                    <td className="border-x border-black py-1.5 px-1 text-right"></td>
+                                    <td className="border-x border-black py-1.5 px-2 text-right font-bold">{processingFee.toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
+                                </tr>
                                 {/* Padding row */}
                                 <tr>
                                     <td className="border-x border-black h-[100px]"></td>
@@ -299,7 +371,7 @@ export default function WCDetailPage({ params }: { params: Promise<{ id: string 
                                     <td className="border border-black py-1.5 px-2 text-right">{wc.vatAmount?.toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
                                 </tr>
                                 <tr>
-                                    <td className="border-x border-b border-black font-bold p-2 text-center h-28 text-[10px] align-top" colSpan={4}>
+                                    <td className="border-x border-b border-black font-bold p-2 text-center h-20 text-[10px] align-top" colSpan={4}>
                                         {wc.notes && <span className="text-left block">หมายเหตุ: {wc.notes}</span>}
                                     </td>
                                     <td colSpan={2} className="border border-black py-1.5 px-2 text-center font-bold">Total Included Vat</td>
@@ -309,54 +381,53 @@ export default function WCDetailPage({ params }: { params: Promise<{ id: string 
                         </table>
 
                         {/* Signatures */}
-                        <div className="grid grid-cols-1 md:grid-cols-2 print:grid-cols-2 text-[11px] font-semibold mt-4">
-                            <div></div>
-                            <div className="text-center space-y-12 w-full max-w-[400px] ml-auto">
-                                <div className="-ml-10">
-                                    {companySettings.name} หวังว่าท่านจะได้รับความไว้วางใจให้ดำเนินการ <br />
-                                    <span className="font-bold">และขอขอบคุณมา ณ โอกาสนี้ ด้วยความนับถือ</span>
-                                </div>
-                                <div className="flex justify-center gap-8 -ml-10">
-                                    {wc.signatureData ? (
-                                        <div className="space-y-1 flex flex-col items-center">
-                                            {wc.signatureData.signatureUrl ? (
-                                                <div className="h-12 w-32 border-b border-black mb-1 flex items-end justify-center">
-                                                    <img src={wc.signatureData.signatureUrl} alt="Signature" className="max-h-full max-w-full object-contain" />
-                                                </div>
-                                            ) : (
-                                                <p className="mb-2">.............................................</p>
-                                            )}
-                                            <p>{wc.signatureData.name || "( ................................................ )"}</p>
-                                            <p className="font-bold text-xs mt-1">{wc.signatureData.position || "ตำแหน่ง..............................."}</p>
-                                        </div>
-                                    ) : companySettings.signatures && companySettings.signatures.length > 0 ? (
-                                        companySettings.signatures.map((sig: any) => (
-                                            <div key={sig.id} className="space-y-1 flex flex-col items-center">
-                                                {sig.signatureUrl ? (
-                                                    <div className="h-12 w-32 border-b border-black mb-1 flex items-end justify-center">
-                                                        <img src={sig.signatureUrl} alt="Signature" className="max-h-full max-w-full object-contain" />
-                                                    </div>
-                                                ) : (
-                                                    <p className="mb-2">.............................................</p>
-                                                )}
-                                                <p>{sig.name || "( ................................................ )"}</p>
-                                                <p className="font-bold text-xs mt-1">{sig.position || "ตำแหน่ง..............................."}</p>
+                        <div className="grid grid-cols-1 md:grid-cols-2 print:grid-cols-2 text-[11px] font-semibold mt-12 print:mt-14 gap-8">
+                            <div className="text-center space-y-2">
+                                <div className="h-12 w-56 border-b border-black mx-auto"></div>
+                                <p>( {wc.vendorName || "................................................"} )</p>
+                                <p className="font-bold text-xs">ผู้รับจ้าง / ผู้ถูกจ้างงาน</p>
+                            </div>
+
+                            <div className="text-center space-y-2">
+                                {wc.signatureData ? (
+                                    <div className="space-y-2 flex flex-col items-center">
+                                        {wc.signatureData.signatureUrl ? (
+                                            <div className="h-12 w-56 border-b border-black flex items-end justify-center">
+                                                <img src={wc.signatureData.signatureUrl} alt="Signature" className="max-h-full max-w-full object-contain" />
                                             </div>
-                                        ))
-                                    ) : (
-                                        <div className="space-y-1 flex flex-col items-center">
-                                            {companySettings.signatureUrl ? (
-                                                <div className="h-12 w-32 border-b border-black mb-1 flex items-end justify-center">
-                                                    <img src={companySettings.signatureUrl} alt="Signature" className="max-h-full max-w-full object-contain" />
+                                        ) : (
+                                            <div className="h-12 w-56 border-b border-black"></div>
+                                        )}
+                                        <p>{wc.signatureData.name || "( ................................................ )"}</p>
+                                        <p className="font-bold text-xs">{wc.signatureData.position || "ผู้ว่าจ้าง"}</p>
+                                    </div>
+                                ) : companySettings.signatures && companySettings.signatures.length > 0 ? (
+                                    companySettings.signatures.map((sig) => (
+                                        <div key={sig.id} className="space-y-2 flex flex-col items-center">
+                                            {sig.signatureUrl ? (
+                                                <div className="h-12 w-56 border-b border-black flex items-end justify-center">
+                                                    <img src={sig.signatureUrl} alt="Signature" className="max-h-full max-w-full object-contain" />
                                                 </div>
                                             ) : (
-                                                <p className="mb-2">.............................................</p>
+                                                <div className="h-12 w-56 border-b border-black"></div>
                                             )}
-                                            <p>( นายองศิลป์ วิริยะสัญญา )</p>
-                                            <p className="font-bold text-xs mt-1">ผู้จัดการ</p>
+                                            <p>{sig.name || "( ................................................ )"}</p>
+                                            <p className="font-bold text-xs">{sig.position || "ผู้ว่าจ้าง"}</p>
                                         </div>
-                                    )}
-                                </div>
+                                    ))
+                                ) : (
+                                    <div className="space-y-2 flex flex-col items-center">
+                                        {companySettings.signatureUrl ? (
+                                            <div className="h-12 w-56 border-b border-black flex items-end justify-center">
+                                                <img src={companySettings.signatureUrl} alt="Signature" className="max-h-full max-w-full object-contain" />
+                                            </div>
+                                        ) : (
+                                            <div className="h-12 w-56 border-b border-black"></div>
+                                        )}
+                                        <p>( ................................................ )</p>
+                                        <p className="font-bold text-xs">ผู้ว่าจ้าง</p>
+                                    </div>
+                                )}
                             </div>
                         </div>
 

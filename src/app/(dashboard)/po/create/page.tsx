@@ -1,24 +1,45 @@
-"use client";
+﻿"use client";
 
 import { useProject } from "@/context/ProjectContext";
-import { ArrowLeft, Save, FileText, Send, Plus, Loader2, Search, ChevronDown } from "lucide-react";
+import { ArrowLeft, Save, FileText, Send, Plus, Loader2, Search, ChevronDown, Upload } from "lucide-react";
 import Link from "next/link";
-import { useState, useEffect } from "react";
+import { useState, useEffect, ChangeEvent } from "react";
 import { POItem } from "@/types/po";
 import { useAuth } from "@/context/AuthContext";
 import { collection, addDoc, serverTimestamp, query, where, getDocs, doc, getDoc, orderBy, limit } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { useRouter } from "next/navigation";
 import { Vendor } from "@/types/vendor";
+import { parseDocumentItemsCsv, PROCESSING_FEE_LABEL } from "@/lib/documentItems";
+
+type SignatureOption = {
+    id: string;
+    name: string;
+    position?: string;
+    signatureUrl?: string;
+};
+
+type CompanySettings = {
+    signatures?: SignatureOption[];
+};
 
 export default function CreatePOPage() {
     const { currentProject } = useProject();
     const { user, userProfile } = useAuth();
     const router = useRouter();
 
-    const [items, setItems] = useState<Partial<POItem>[]>([
-        { id: "1", description: "", quantity: 1, unit: "", unitPrice: 0, amount: 0 }
-    ]);
+    const createEmptyItem = (id: string): Partial<POItem> => ({
+        id,
+        description: "",
+        quantity: 1,
+        unit: "",
+        unitPrice: 0,
+        amount: 0,
+        isClosed: false,
+    });
+
+    const [items, setItems] = useState<Partial<POItem>[]>([createEmptyItem("1")]);
+    const [processingFee, setProcessingFee] = useState(0);
 
     const [vendorId, setVendorId] = useState("");
     const [vendors, setVendors] = useState<Vendor[]>([]);
@@ -28,7 +49,7 @@ export default function CreatePOPage() {
     const [creditDays, setCreditDays] = useState(30);
     const [poNumber, setPoNumber] = useState("");
     const [poType, setPoType] = useState<"project" | "extra">("project");
-    const [companySettings, setCompanySettings] = useState<any>(null);
+    const [companySettings, setCompanySettings] = useState<CompanySettings | null>(null);
     const [availableUnits, setAvailableUnits] = useState<string[]>([]);
     const [selectedSignatureId, setSelectedSignatureId] = useState("");
 
@@ -122,13 +143,10 @@ export default function CreatePOPage() {
     }, []);
 
     const handleAddItem = () => {
-        setItems([
-            ...items,
-            { id: Date.now().toString(), description: "", quantity: 1, unit: "", unitPrice: 0, amount: 0 }
-        ]);
+        setItems([...items, createEmptyItem(Date.now().toString())]);
     };
 
-    const handleItemChange = (id: string, field: keyof POItem, value: any) => {
+    const handleItemChange = (id: string, field: keyof POItem, value: string | number) => {
         const newItems = items.map(item => {
             if (item.id === id) {
                 const updated = { ...item, [field]: value };
@@ -146,7 +164,60 @@ export default function CreatePOPage() {
         setItems(items.filter(item => item.id !== id));
     };
 
-    const subTotal = items.reduce((sum, item) => sum + (item.amount || 0), 0);
+    const toggleItemClosed = (id: string) => {
+        setItems(items.map((item) => (
+            item.id === id ? { ...item, isClosed: !item.isClosed } : item
+        )));
+    };
+
+    const handleImportCsv = (event: ChangeEvent<HTMLInputElement>) => {
+        const file = event.target.files?.[0];
+        if (!file) return;
+
+        const inputRef = event.target;
+        const reader = new FileReader();
+
+        reader.onload = () => {
+            try {
+                const content = String(reader.result || "");
+                const importedRows = parseDocumentItemsCsv(content);
+
+                if (importedRows.length === 0) {
+                    alert("ไม่พบข้อมูลรายการในไฟล์ CSV");
+                    return;
+                }
+
+                const mappedItems = importedRows.map((row, index) => ({
+                    id: `csv-${Date.now()}-${index}`,
+                    description: row.description,
+                    quantity: row.quantity || 1,
+                    unit: row.unit,
+                    unitPrice: row.unitPrice,
+                    amount: row.amount || (row.quantity || 1) * row.unitPrice,
+                    isClosed: false,
+                }));
+
+                setItems(mappedItems);
+                alert(`นำเข้า CSV สำเร็จ ${mappedItems.length} รายการ`);
+            } catch (error) {
+                console.error("CSV import error:", error);
+                alert("ไม่สามารถอ่านไฟล์ CSV ได้ กรุณาตรวจสอบรูปแบบไฟล์");
+            } finally {
+                inputRef.value = "";
+            }
+        };
+
+        reader.onerror = () => {
+            alert("เกิดข้อผิดพลาดระหว่างอ่านไฟล์ CSV");
+            inputRef.value = "";
+        };
+
+        reader.readAsText(file, "utf-8");
+    };
+
+    const normalizedProcessingFee = Math.max(0, Number(processingFee) || 0);
+    const itemsTotalBeforeFee = items.reduce((sum, item) => sum + (item.amount || 0), 0);
+    const subTotal = itemsTotalBeforeFee + normalizedProcessingFee;
     const vatAmount = (subTotal * vatRate) / 100;
     const totalAmount = subTotal + vatAmount;
 
@@ -182,15 +253,27 @@ export default function CreatePOPage() {
                 quantity: Number(item.quantity) || 0,
                 unit: item.unit || "",
                 unitPrice: Number(item.unitPrice) || 0,
-                amount: Number(item.amount) || 0
+                amount: Number(item.amount) || 0,
+                isClosed: Boolean(item.isClosed),
             }));
+
+            if (normalizedProcessingFee > 0) {
+                sanitizedItems.push({
+                    id: `fee-${Date.now()}`,
+                    description: PROCESSING_FEE_LABEL,
+                    quantity: 0,
+                    unit: "",
+                    unitPrice: normalizedProcessingFee,
+                    amount: normalizedProcessingFee,
+                });
+            }
 
             // In some cases userProfile isn't set depending on database state, so use primary firebase user uid
             const createdByUid = userProfile?.uid || user.uid;
 
-            let signatureData = null;
+            let signatureData: SignatureOption | null = null;
             if (companySettings?.signatures && selectedSignatureId) {
-                signatureData = companySettings.signatures.find((s: any) => s.id === selectedSignatureId) || null;
+                signatureData = companySettings.signatures.find((s) => s.id === selectedSignatureId) || null;
             }
 
             const newPO = {
@@ -433,7 +516,7 @@ export default function CreatePOPage() {
                                     className="w-full border border-slate-300 rounded-lg py-2 px-3 text-sm focus:ring-blue-500 focus:border-blue-500 bg-white"
                                 >
                                     <option value="">ไม่ระบุลายเซ็น</option>
-                                    {companySettings?.signatures?.map((sig: any) => (
+                                    {companySettings?.signatures?.map((sig) => (
                                         <option key={sig.id} value={sig.id}>
                                             {sig.name} ({sig.position})
                                         </option>
@@ -446,8 +529,9 @@ export default function CreatePOPage() {
                     <hr className="border-slate-100" />
 
                     <div>
-                        <div className="flex justify-between items-end mb-4">
+                        <div className="flex flex-col gap-2 md:flex-row md:justify-between md:items-end mb-4">
                             <h3 className="text-lg font-semibold text-slate-800">รายการสั่งซื้อ</h3>
+                            <p className="text-xs text-slate-500">รองรับ CSV: description, quantity, unit, unitPrice (มีหัวตารางหรือไม่มีก็ได้)</p>
                         </div>
 
                         <div className="border border-slate-200 rounded-lg overflow-hidden">
@@ -460,12 +544,13 @@ export default function CreatePOPage() {
                                         <th scope="col" className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase">หน่วย</th>
                                         <th scope="col" className="px-4 py-3 text-right text-xs font-semibold text-slate-500 uppercase">ราคา/หน่วย</th>
                                         <th scope="col" className="px-4 py-3 text-right text-xs font-semibold text-slate-500 uppercase">รวมเป็นเงิน</th>
+                                        <th scope="col" className="px-4 py-3 text-center text-xs font-semibold text-slate-500 uppercase">ปิด</th>
                                         <th scope="col" className="px-4 py-3"></th>
                                     </tr>
                                 </thead>
                                 <tbody className="bg-white divide-y divide-slate-100">
                                     {items.map((item, index) => (
-                                        <tr key={item.id} className="group">
+                                        <tr key={item.id} className={`group ${item.isClosed ? "bg-blue-50/30" : ""}`}>
                                             <td className="px-4 py-3 text-sm text-slate-400 font-medium">{index + 1}</td>
                                             <td className="px-4 py-3">
                                                 <input
@@ -498,11 +583,21 @@ export default function CreatePOPage() {
                                                     type="number"
                                                     value={item.unitPrice}
                                                     onChange={(e) => handleItemChange(item.id!, 'unitPrice', Number(e.target.value))}
-                                                    className="w-24 text-sm text-right border border-slate-200 rounded py-1 px-2 focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+                                                    disabled={Boolean(item.isClosed)}
+                                                    className={`w-24 text-sm text-right border rounded py-1 px-2 ${item.isClosed ? "border-slate-200 bg-slate-100 text-slate-500 cursor-not-allowed" : "border-slate-200 focus:border-blue-500 focus:ring-1 focus:ring-blue-500"}`}
                                                 />
                                             </td>
                                             <td className="px-4 py-3 text-right text-sm font-medium text-slate-900">
                                                 {item.amount?.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                            </td>
+                                            <td className="px-4 py-3 text-center">
+                                                <input
+                                                    type="checkbox"
+                                                    checked={Boolean(item.isClosed)}
+                                                    onChange={() => toggleItemClosed(item.id!)}
+                                                    title="ปิดราคา (ล็อกราคาในรายการ)"
+                                                    className="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                                                />
                                             </td>
                                             <td className="px-4 py-3 text-right">
                                                 <button
@@ -514,6 +609,40 @@ export default function CreatePOPage() {
                                             </td>
                                         </tr>
                                     ))}
+                                    <tr className="bg-slate-50/70">
+                                        <td className="px-4 py-3 text-sm text-slate-700 font-semibold">{items.length + 1}</td>
+                                        <td className="px-4 py-3 text-sm font-semibold text-slate-900">ราคารวม</td>
+                                        <td className="px-4 py-3"></td>
+                                        <td className="px-4 py-3"></td>
+                                        <td className="px-4 py-3"></td>
+                                        <td className="px-4 py-3 text-right text-sm font-semibold text-slate-900">
+                                            {itemsTotalBeforeFee.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                        </td>
+                                        <td className="px-4 py-3"></td>
+                                        <td className="px-4 py-3"></td>
+                                    </tr>
+                                    <tr className="bg-amber-50/50">
+                                        <td className="px-4 py-3 text-sm text-amber-700 font-semibold">{items.length + 2}</td>
+                                        <td className="px-4 py-3 text-sm font-semibold text-amber-900">
+                                            {PROCESSING_FEE_LABEL}
+                                        </td>
+                                        <td className="px-4 py-3 text-sm text-slate-500"></td>
+                                        <td className="px-4 py-3 text-sm text-slate-500"></td>
+                                        <td className="px-4 py-3 text-right">
+                                            <input
+                                                type="number"
+                                                min="0"
+                                                value={processingFee}
+                                                onChange={(e) => setProcessingFee(Number(e.target.value))}
+                                                className="w-24 text-sm text-right border border-amber-200 rounded py-1 px-2 focus:border-amber-500 focus:ring-1 focus:ring-amber-500 bg-white"
+                                            />
+                                        </td>
+                                        <td className="px-4 py-3 text-right text-sm font-semibold text-amber-900">
+                                            {normalizedProcessingFee.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                        </td>
+                                        <td className="px-4 py-3"></td>
+                                        <td className="px-4 py-3"></td>
+                                    </tr>
                                 </tbody>
                             </table>
                             {availableUnits.length > 0 && (
@@ -521,19 +650,34 @@ export default function CreatePOPage() {
                                     {availableUnits.map(u => <option key={u} value={u} />)}
                                 </datalist>
                             )}
-                            <div className="bg-slate-50 p-3 border-t border-slate-200">
-                                <button
-                                    onClick={handleAddItem}
-                                    className="text-sm text-blue-600 hover:text-blue-800 font-medium px-2 py-1 flex items-center"
-                                >
-                                    <Plus size={16} className="mr-1" /> เพิ่มรายการ
-                                </button>
+                            <div className="bg-slate-50 p-3 border-t border-slate-200 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                                <div className="flex items-center gap-2">
+                                    <button
+                                        onClick={handleAddItem}
+                                        className="text-sm text-blue-600 hover:text-blue-800 font-medium px-2 py-1 flex items-center"
+                                    >
+                                        <Plus size={16} className="mr-1" /> เพิ่มรายการ
+                                    </button>
+                                    <label className="text-sm text-blue-600 hover:text-blue-800 font-medium px-2 py-1 flex items-center cursor-pointer">
+                                        <Upload size={16} className="mr-1" /> นำเข้า CSV
+                                        <input type="file" accept=".csv,text/csv" className="hidden" onChange={handleImportCsv} />
+                                    </label>
+                                </div>
+                                <span className="text-xs text-slate-500">ระบบจะเขียนรายการสุดท้ายเป็น {PROCESSING_FEE_LABEL} อัตโนมัติเมื่อมีค่า</span>
                             </div>
                         </div>
                     </div>
 
                     <div className="flex justify-end pt-6">
                         <div className="w-80 space-y-3">
+                            <div className="flex justify-between text-sm text-slate-600">
+                                <span>รวมราคาก่อนค่าดำเนินการ</span>
+                                <span className="font-medium text-slate-900">฿ {itemsTotalBeforeFee.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+                            </div>
+                            <div className="flex justify-between text-sm text-slate-600">
+                                <span>{PROCESSING_FEE_LABEL}</span>
+                                <span className="font-medium text-slate-900">฿ {normalizedProcessingFee.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+                            </div>
                             <div className="flex justify-between text-sm text-slate-600">
                                 <span>ยอดรวมก่อนภาษี (Subtotal)</span>
                                 <span className="font-medium text-slate-900">฿ {subTotal.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>

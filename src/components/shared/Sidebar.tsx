@@ -2,16 +2,20 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
+import { useState } from "react";
 import { useAuth } from "@/context/AuthContext";
 import { clsx } from "clsx";
 import {
     LayoutDashboard,
     Building2,
+    ContactRound,
     Users,
     FileText,
     FileEdit,
     Settings,
     UserCog,
+    ChevronDown,
+    ChevronRight,
     X,
     User,
     LogOut,
@@ -19,15 +23,26 @@ import {
     Briefcase
 } from "lucide-react";
 
-const navigation = [
+const mainNavigation = [
     { name: "หน้าหลัก", href: "/dashboard", icon: LayoutDashboard },
     { name: "รายงาน (Reports)", href: "/reports", icon: LineChart },
     { name: "โครงการ (Projects)", href: "/projects", icon: Building2 },
+];
+
+const documentNavigation = [
     { name: "ใบสั่งซื้อ (PO)", href: "/po", icon: FileText },
     { name: "ใบจ้างงาน (WC)", href: "/wc", icon: Briefcase },
     { name: "งานเพิ่ม-ลด (VO)", href: "/vo", icon: FileEdit },
+];
+
+const peopleAndPartnersNavigation = [
+    { name: "ลูกค้า (Customers)", href: "/customers", icon: ContactRound },
+    { name: "ลูกจ้าง (Contractors)", href: "/contractors", icon: User },
     { name: "คู่ค้า (Vendors)", href: "/vendors", icon: Users },
     { name: "พนักงาน (Users)", href: "/users", icon: UserCog },
+];
+
+const settingsNavigation = [
     { name: "ตั้งค่าระบบ", href: "/settings", icon: Settings },
 ];
 
@@ -40,9 +55,19 @@ export default function Sidebar({ isOpen = false, setIsOpen }: SidebarProps) {
     const pathname = usePathname();
     const router = useRouter();
     const { userProfile, signOut } = useAuth();
+    const documentSubmenuActive = documentNavigation.some((item) => pathname.startsWith(item.href));
+    const [isDocumentSubmenuOpen, setIsDocumentSubmenuOpen] = useState<boolean>(true);
+    const submenuActive = peopleAndPartnersNavigation.some((item) => pathname.startsWith(item.href));
+    const [isSubmenuOpen, setIsSubmenuOpen] = useState<boolean>(true);
 
     const closeSidebar = () => {
         if (setIsOpen) setIsOpen(false);
+    };
+
+    const handleNavigate = () => {
+        if (window.innerWidth < 1024) {
+            closeSidebar();
+        }
     };
 
     const handleSignOut = async () => {
@@ -78,7 +103,7 @@ export default function Sidebar({ isOpen = false, setIsOpen }: SidebarProps) {
                 {/* Logo Area */}
                 <div className="h-16 flex items-center justify-between px-6 border-b border-slate-800">
                     <div className="flex items-center">
-                        <span className="ml-3 text-lg font-bold tracking-wider text-slate-100">EGP<span className="text-blue-500">Powertec</span></span>
+                        <span className="ml-3 text-lg font-bold tracking-wider text-slate-100"><span className="text-green-500">Powertec</span>จัดซื้อ-จ้าง</span>
                     </div>
                     {/* Close button for mobile */}
                     <button
@@ -92,7 +117,7 @@ export default function Sidebar({ isOpen = false, setIsOpen }: SidebarProps) {
                 {/* Navigation */}
                 <div className="flex-1 overflow-y-auto py-6">
                     <nav className="px-3 space-y-1">
-                        {navigation.map((item) => {
+                        {mainNavigation.map((item) => {
                             const isActive = pathname.startsWith(item.href);
                             return (
                                 <Link
@@ -104,12 +129,141 @@ export default function Sidebar({ isOpen = false, setIsOpen }: SidebarProps) {
                                             ? "bg-blue-600 text-white shadow-sm"
                                             : "text-slate-300 hover:bg-slate-800 hover:text-white"
                                     )}
-                                    onClick={() => {
-                                        // Auto close sidebar on mobile when navigating
-                                        if (window.innerWidth < 1024) {
-                                            closeSidebar();
-                                        }
-                                    }}
+                                    onClick={handleNavigate}
+                                >
+                                    <item.icon
+                                        className={clsx(
+                                            "mr-3 h-5 w-5 flex-shrink-0 transition-colors",
+                                            isActive ? "text-white" : "text-slate-400 group-hover:text-slate-300"
+                                        )}
+                                        aria-hidden="true"
+                                    />
+                                    {item.name}
+                                </Link>
+                            );
+                        })}
+
+                        <div className="pt-1">
+                            <button
+                                type="button"
+                                onClick={() => setIsDocumentSubmenuOpen((prev) => !prev)}
+                                className={clsx(
+                                    "w-full group flex items-center justify-between px-3 py-3 text-sm font-medium rounded-lg transition-colors",
+                                    documentSubmenuActive
+                                        ? "bg-blue-600 text-white shadow-sm"
+                                        : "text-slate-300 hover:bg-slate-800 hover:text-white"
+                                )}
+                            >
+                                <span className="flex items-center">
+                                    <FileText
+                                        className={clsx(
+                                            "mr-3 h-5 w-5 flex-shrink-0 transition-colors",
+                                            documentSubmenuActive ? "text-white" : "text-slate-400 group-hover:text-slate-300"
+                                        )}
+                                    />
+                                    การสร้างเอกสาร
+                                </span>
+                                {isDocumentSubmenuOpen ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
+                            </button>
+
+                            {isDocumentSubmenuOpen && (
+                                <div className="mt-1 ml-4 pl-3 border-l border-slate-800 space-y-1">
+                                    {documentNavigation.map((item) => {
+                                        const isActive = pathname.startsWith(item.href);
+                                        return (
+                                            <Link
+                                                key={item.name}
+                                                href={item.href}
+                                                className={clsx(
+                                                    "group flex items-center px-3 py-2.5 text-sm font-medium rounded-lg transition-colors",
+                                                    isActive
+                                                        ? "bg-blue-600 text-white shadow-sm"
+                                                        : "text-slate-300 hover:bg-slate-800 hover:text-white"
+                                                )}
+                                                onClick={handleNavigate}
+                                            >
+                                                <item.icon
+                                                    className={clsx(
+                                                        "mr-3 h-4 w-4 flex-shrink-0 transition-colors",
+                                                        isActive ? "text-white" : "text-slate-400 group-hover:text-slate-300"
+                                                    )}
+                                                    aria-hidden="true"
+                                                />
+                                                {item.name}
+                                            </Link>
+                                        );
+                                    })}
+                                </div>
+                            )}
+                        </div>
+
+                        <div className="pt-1">
+                            <button
+                                type="button"
+                                onClick={() => setIsSubmenuOpen((prev) => !prev)}
+                                className={clsx(
+                                    "w-full group flex items-center justify-between px-3 py-3 text-sm font-medium rounded-lg transition-colors",
+                                    submenuActive
+                                        ? "bg-blue-600 text-white shadow-sm"
+                                        : "text-slate-300 hover:bg-slate-800 hover:text-white"
+                                )}
+                            >
+                                <span className="flex items-center">
+                                    <Users
+                                        className={clsx(
+                                            "mr-3 h-5 w-5 flex-shrink-0 transition-colors",
+                                            submenuActive ? "text-white" : "text-slate-400 group-hover:text-slate-300"
+                                        )}
+                                    />
+                                    บุคคลและคู่ค้า
+                                </span>
+                                {isSubmenuOpen ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
+                            </button>
+
+                            {isSubmenuOpen && (
+                                <div className="mt-1 ml-4 pl-3 border-l border-slate-800 space-y-1">
+                                    {peopleAndPartnersNavigation.map((item) => {
+                                        const isActive = pathname.startsWith(item.href);
+                                        return (
+                                            <Link
+                                                key={item.name}
+                                                href={item.href}
+                                                className={clsx(
+                                                    "group flex items-center px-3 py-2.5 text-sm font-medium rounded-lg transition-colors",
+                                                    isActive
+                                                        ? "bg-blue-600 text-white shadow-sm"
+                                                        : "text-slate-300 hover:bg-slate-800 hover:text-white"
+                                                )}
+                                                onClick={handleNavigate}
+                                            >
+                                                <item.icon
+                                                    className={clsx(
+                                                        "mr-3 h-4 w-4 flex-shrink-0 transition-colors",
+                                                        isActive ? "text-white" : "text-slate-400 group-hover:text-slate-300"
+                                                    )}
+                                                    aria-hidden="true"
+                                                />
+                                                {item.name}
+                                            </Link>
+                                        );
+                                    })}
+                                </div>
+                            )}
+                        </div>
+
+                        {settingsNavigation.map((item) => {
+                            const isActive = pathname.startsWith(item.href);
+                            return (
+                                <Link
+                                    key={item.name}
+                                    href={item.href}
+                                    className={clsx(
+                                        "group flex items-center px-3 py-3 text-sm font-medium rounded-lg transition-colors",
+                                        isActive
+                                            ? "bg-blue-600 text-white shadow-sm"
+                                            : "text-slate-300 hover:bg-slate-800 hover:text-white"
+                                    )}
+                                    onClick={handleNavigate}
                                 >
                                     <item.icon
                                         className={clsx(
