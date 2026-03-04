@@ -12,8 +12,20 @@ interface LineSettings {
     lineToken: string;
     groupId: string;
     userId: string;
+    recipientAdminUid?: string;
+    recipientAdminUids: string[];
     isEnabled: boolean;
 }
+
+interface AdminRecipientOption {
+    uid: string;
+    displayName: string;
+    email: string;
+    lineUserId: string;
+    isActive: boolean;
+}
+
+const isValidLineRecipientId = (value: string) => /^[UCR][0-9A-Za-z]{10,}$/.test(value.trim());
 
 export interface SignatureItem {
     id: string;
@@ -51,6 +63,8 @@ export default function SettingsPage() {
             lineToken: "",
             groupId: "",
             userId: "",
+            recipientAdminUid: "",
+            recipientAdminUids: [],
             isEnabled: false,
         },
         companySettings: {
@@ -69,6 +83,7 @@ export default function SettingsPage() {
     const [newVendorType, setNewVendorType] = useState("");
     const [newItemUnit, setNewItemUnit] = useState("");
     const [activeTab, setActiveTab] = useState('line');
+    const [adminRecipients, setAdminRecipients] = useState<AdminRecipientOption[]>([]);
 
     const tabs = [
         { id: 'line', label: 'แจ้งเตือน LINE', icon: MessageCircle },
@@ -118,23 +133,86 @@ export default function SettingsPage() {
     };
 
     useEffect(() => {
+        let isMounted = true;
+
         async function fetchSettings() {
             try {
-                // Fetch line settings from a global config document
-                const docRef = doc(db, "system_settings", "global_config");
-                const docSnap = await getDoc(docRef);
+                const settingsRef = doc(db, "system_settings", "global_config");
+                const adminQuery = query(collection(db, "users"), where("role", "==", "admin"));
+                const [settingsSnap, adminSnap] = await Promise.all([
+                    getDoc(settingsRef),
+                    getDocs(adminQuery),
+                ]);
 
-                if (docSnap.exists()) {
-                    setSettings(prev => ({ ...prev, ...docSnap.data() }));
+                if (!isMounted) return;
+
+                const admins = adminSnap.docs
+                    .map((docSnap) => {
+                        const user = docSnap.data() as Partial<AdminRecipientOption>;
+                        return {
+                            uid: docSnap.id,
+                            displayName: user.displayName || user.email || docSnap.id,
+                            email: user.email || "",
+                            lineUserId: user.lineUserId || "",
+                            isActive: user.isActive !== false,
+                        };
+                    })
+                    .sort((a, b) => a.displayName.localeCompare(b.displayName, "th"));
+
+                setAdminRecipients(admins);
+
+                if (settingsSnap.exists()) {
+                    const data = settingsSnap.data() as Partial<SystemSettings>;
+                    const lineData = (data.lineIntegration || {}) as Partial<LineSettings>;
+                    const legacyRecipientAdminUid =
+                        typeof lineData.recipientAdminUid === "string" ? lineData.recipientAdminUid.trim() : "";
+                    const adminUidToLineId = new Map(
+                        admins
+                            .filter((admin) => !!admin.lineUserId)
+                            .map((admin) => [admin.uid, admin.lineUserId])
+                    );
+                    const rawRecipients = Array.isArray(lineData.recipientAdminUids)
+                        ? lineData.recipientAdminUids
+                        : (legacyRecipientAdminUid ? [legacyRecipientAdminUid] : []);
+                    const recipientAdminUids = Array.from(
+                        new Set(
+                            rawRecipients
+                                .filter((value): value is string => typeof value === "string")
+                                .map((value) => value.trim())
+                                .filter(Boolean)
+                                .map((value) => {
+                                    if (isValidLineRecipientId(value)) return value;
+                                    return adminUidToLineId.get(value) || "";
+                                })
+                                .filter(Boolean)
+                        )
+                    );
+                    setSettings(prev => ({
+                        ...prev,
+                        ...data,
+                        lineIntegration: {
+                            ...prev.lineIntegration,
+                            ...lineData,
+                            recipientAdminUid: recipientAdminUids[0] || "",
+                            recipientAdminUids,
+                        },
+                    }));
                 }
+
             } catch (error) {
                 console.error("Error fetching settings:", error);
             } finally {
-                setLoading(false);
+                if (isMounted) {
+                    setLoading(false);
+                }
             }
         }
 
         fetchSettings();
+
+        return () => {
+            isMounted = false;
+        };
     }, []);
 
     const handleLogoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -216,6 +294,34 @@ export default function SettingsPage() {
         });
     };
 
+    const selectedAdminRecipientUids = Array.isArray(settings.lineIntegration.recipientAdminUids)
+        ? settings.lineIntegration.recipientAdminUids
+        : [];
+    const selectedAdminRecipients = adminRecipients.filter(
+        (admin) => !!admin.lineUserId && selectedAdminRecipientUids.includes(admin.lineUserId)
+    );
+    const hasSelectedAdminWithoutLineId = selectedAdminRecipients.some((admin) => !admin.lineUserId);
+
+    const toggleRecipientAdmin = (lineUserId: string, checked: boolean) => {
+        setSettings((prev) => {
+            const current = Array.isArray(prev.lineIntegration.recipientAdminUids)
+                ? prev.lineIntegration.recipientAdminUids
+                : [];
+            const next = checked
+                ? Array.from(new Set([...current, lineUserId]))
+                : current.filter((id) => id !== lineUserId);
+
+            return {
+                ...prev,
+                lineIntegration: {
+                    ...prev.lineIntegration,
+                    recipientAdminUids: next,
+                    recipientAdminUid: next[0] || "",
+                },
+            };
+        });
+    };
+
     // Only Admin can edit system settings (or bootstrap user)
     const isAdmin = userProfile?.role === "admin" || !userProfile;
     if (!isAdmin) {
@@ -238,9 +344,60 @@ export default function SettingsPage() {
         setSuccessMsg("");
 
         try {
+            const adminUidToLineId = new Map(
+                adminRecipients
+                    .filter((admin) => !!admin.lineUserId)
+                    .map((admin) => [admin.uid, admin.lineUserId])
+            );
+            const normalizedLineIntegration: LineSettings = {
+                ...settings.lineIntegration,
+                lineToken: settings.lineIntegration.lineToken.trim(),
+                groupId: settings.lineIntegration.groupId.trim(),
+                userId: settings.lineIntegration.userId.trim(),
+                recipientAdminUids: Array.isArray(settings.lineIntegration.recipientAdminUids)
+                    ? Array.from(
+                        new Set(
+                            settings.lineIntegration.recipientAdminUids
+                                .filter((uid): uid is string => typeof uid === "string")
+                                .map((uid) => uid.trim())
+                                .filter(Boolean)
+                                .map((value) => {
+                                    if (isValidLineRecipientId(value)) return value;
+                                    return adminUidToLineId.get(value) || "";
+                                })
+                                .filter((value) => isValidLineRecipientId(value))
+                        )
+                    )
+                    : [],
+                recipientAdminUid: "",
+            };
+            normalizedLineIntegration.recipientAdminUid = normalizedLineIntegration.recipientAdminUids[0] || "";
+
+            if (
+                normalizedLineIntegration.isEnabled &&
+                !normalizedLineIntegration.groupId &&
+                !normalizedLineIntegration.userId &&
+                (normalizedLineIntegration.recipientAdminUids?.length || 0) === 0
+            ) {
+                setErrorMsg("Please set Group ID or select at least one notification admin.");
+                return;
+            }
+
+            if (
+                normalizedLineIntegration.isEnabled &&
+                (normalizedLineIntegration.recipientAdminUids?.length || 0) > 0 &&
+                !normalizedLineIntegration.groupId &&
+                !normalizedLineIntegration.userId &&
+                selectedAdminRecipients.filter((admin) => !!admin.lineUserId).length === 0
+            ) {
+                setErrorMsg("Selected admins have not linked LINE yet.");
+                return;
+            }
+
             const docRef = doc(db, "system_settings", "global_config");
             await setDoc(docRef, {
                 ...settings,
+                lineIntegration: normalizedLineIntegration,
                 updatedAt: serverTimestamp(),
                 updatedBy: userProfile?.uid || "unknown"
             });
@@ -378,15 +535,55 @@ export default function SettingsPage() {
 
                                 <div>
                                     <label className="block text-sm font-medium text-slate-700 mb-1">
-                                        User ID รับเรื่องแจ้งเตือน
+                                        Notification Admins
                                     </label>
-                                    <input
-                                        type="text"
-                                        value={settings.lineIntegration.userId}
-                                        onChange={(e) => setSettings({ ...settings, lineIntegration: { ...settings.lineIntegration, userId: e.target.value } })}
-                                        className="w-full border border-slate-300 rounded-lg py-2 px-3 text-sm focus:ring-green-500 focus:border-green-500"
-                                        placeholder="เช่น U12345678... (แจ้งเตือนหาคนนี้เป็นหลัก)"
-                                    />
+                                    <div className="rounded-lg border border-slate-300 bg-white max-h-44 overflow-auto">
+                                        {adminRecipients.length === 0 ? (
+                                            <p className="px-3 py-2 text-sm text-slate-500">No admin users found.</p>
+                                        ) : (
+                                            <div className="divide-y divide-slate-100">
+                                                {adminRecipients.map((admin) => {
+                                                    const checked = !!admin.lineUserId && selectedAdminRecipientUids.includes(admin.lineUserId);
+                                                    const disabled = !admin.lineUserId;
+                                                    return (
+                                                        <label key={admin.uid} className="flex items-start gap-3 px-3 py-2 text-sm cursor-pointer hover:bg-slate-50">
+                                                            <input
+                                                                type="checkbox"
+                                                                className="mt-1 h-4 w-4 rounded border-slate-300 text-green-600 focus:ring-green-500"
+                                                                checked={checked}
+                                                                disabled={disabled}
+                                                                onChange={(e) => {
+                                                                    if (!admin.lineUserId) return;
+                                                                    toggleRecipientAdmin(admin.lineUserId, e.target.checked);
+                                                                }}
+                                                            />
+                                                            <div className="min-w-0">
+                                                                <p className="font-medium text-slate-700 truncate">
+                                                                    {admin.displayName}
+                                                                    {admin.email ? ` (${admin.email})` : ""}
+                                                                </p>
+                                                                <p className={`text-xs ${!admin.lineUserId ? "text-amber-600" : "text-green-600"}`}>
+                                                                    {!admin.lineUserId ? "LINE not linked" : "Ready"}
+                                                                    {!admin.isActive ? " • disabled" : ""}
+                                                                </p>
+                                                            </div>
+                                                        </label>
+                                                    );
+                                                })}
+                                            </div>
+                                        )}
+                                    </div>
+                                    <p className="text-xs text-slate-400 mt-2">
+                                        Notifications will be sent to all selected admins.
+                                    </p>
+                                    <p className="text-xs text-slate-500 mt-1">
+                                        Selected {selectedAdminRecipientUids.length} admin(s)
+                                    </p>
+                                    {hasSelectedAdminWithoutLineId && (
+                                        <p className="text-xs text-amber-600 mt-1">
+                                            Some selected admins have no LINE ID.
+                                        </p>
+                                    )}
                                 </div>
                             </div>
 
@@ -396,7 +593,7 @@ export default function SettingsPage() {
                                     <strong>คำแนะนำการใช้งาน:</strong>
                                     <ul className="list-disc list-inside mt-2 space-y-1 text-green-700">
                                         <li>บอทต้องอยู่ในกลุ่ม LINE (ถ้าใช้ Group ID) ถึงจะส่งข้อความได้</li>
-                                        <li>อย่างน้อยควรใส่ Group ID หรือ User ID อย่างใดอย่างหนึ่งเป็นตัวหลัก</li>
+                                        <li>Use Group ID or select at least one notification admin.</li>
                                         <li>อย่าลืมเอาบอท LINE OA แอดเข้ากลุ่มก่อนทดสอบการตอบสนอง</li>
                                     </ul>
                                 </div>
@@ -807,3 +1004,4 @@ export default function SettingsPage() {
         </div>
     );
 }
+

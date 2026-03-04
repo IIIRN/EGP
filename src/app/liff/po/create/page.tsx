@@ -325,7 +325,7 @@ export default function CreatePOPage() {
 
             if (status === "pending") {
                 try {
-                    await fetch("/api/line/notify", {
+                    const notifyRes = await fetch("/api/line/notify", {
                         method: "POST",
                         headers: { "Content-Type": "application/json" },
                         body: JSON.stringify({
@@ -335,8 +335,40 @@ export default function CreatePOPage() {
                             projectName: currentProject.name
                         })
                     });
+
+                    let notifyPayload: any = null;
+                    try {
+                        notifyPayload = await notifyRes.json();
+                    } catch {
+                        notifyPayload = null;
+                    }
+
+                    if (!notifyRes.ok) {
+                        let notifyErrorMsg = "ส่งแจ้งเตือนไปยัง LINE ไม่สำเร็จ";
+                        if (notifyPayload?.message) {
+                            notifyErrorMsg = String(notifyPayload.message);
+                        } else if (notifyPayload?.error) {
+                            notifyErrorMsg = typeof notifyPayload.error === "string" ? notifyPayload.error : notifyErrorMsg;
+                        }
+
+                        const failedReason = notifyPayload?.firstFailedReason
+                            ? ` (${String(notifyPayload.firstFailedReason)})`
+                            : "";
+
+                        console.error("Line notification failed:", notifyErrorMsg);
+                        alert(`บันทึกเอกสารแล้ว แต่${notifyErrorMsg}${failedReason}`);
+                    } else if (notifyPayload?.partial) {
+                        const partialMsg = String(notifyPayload.message || "ส่งแจ้งเตือนได้บางส่วน");
+                        const failedReason = notifyPayload?.firstFailedReason
+                            ? ` (${String(notifyPayload.firstFailedReason)})`
+                            : "";
+
+                        console.warn("Line notification partial:", notifyPayload);
+                        alert(`บันทึกเอกสารแล้ว: ${partialMsg}${failedReason}`);
+                    }
                 } catch (e) {
                     console.error("Line notification failed:", e);
+                    alert("บันทึกเอกสารแล้ว แต่ส่งแจ้งเตือน LINE ไม่สำเร็จ");
                 }
             }
 
