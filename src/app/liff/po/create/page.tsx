@@ -358,13 +358,8 @@ export default function CreatePOPage() {
                         console.error("Line notification failed:", notifyErrorMsg);
                         alert(`บันทึกเอกสารแล้ว แต่${notifyErrorMsg}${failedReason}`);
                     } else if (notifyPayload?.partial) {
-                        const partialMsg = String(notifyPayload.message || "ส่งแจ้งเตือนได้บางส่วน");
-                        const failedReason = notifyPayload?.firstFailedReason
-                            ? ` (${String(notifyPayload.firstFailedReason)})`
-                            : "";
-
+                        // Keep user flow silent on partial notification success.
                         console.warn("Line notification partial:", notifyPayload);
-                        alert(`บันทึกเอกสารแล้ว: ${partialMsg}${failedReason}`);
                     }
                 } catch (e) {
                     console.error("Line notification failed:", e);
