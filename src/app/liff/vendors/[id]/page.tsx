@@ -1,15 +1,18 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { use, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { ArrowLeft, Building2, Save, Loader2, Tag } from "lucide-react";
-import { collection, addDoc, doc, getDoc } from "firebase/firestore";
+import { doc, getDoc, updateDoc } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { Vendor } from "@/types/vendor";
 
-export default function CreateVendorPage() {
+export default function EditLiffVendorPage({ params }: { params: Promise<{ id: string }> }) {
+    const resolvedParams = use(params);
     const router = useRouter();
+
+    const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
 
     const [formData, setFormData] = useState<Partial<Vendor>>({
@@ -21,42 +24,68 @@ export default function CreateVendorPage() {
         address: "",
         googleMapUrl: "",
         vendorTypes: [],
-        isActive: true
+        isActive: true,
     });
-
     const [availableTypes, setAvailableTypes] = useState<string[]>([]);
 
     useEffect(() => {
-        async function fetchVendorTypes() {
+        async function fetchData() {
+            if (!resolvedParams.id) return;
             try {
-                const docRef = doc(db, "system_settings", "global_config");
-                const docSnap = await getDoc(docRef);
-                if (docSnap.exists()) {
-                    const data = docSnap.data();
-                    if (data.vendorTypes) {
-                        setAvailableTypes(data.vendorTypes);
-                    }
+                const [vendorSnap, configSnap] = await Promise.all([
+                    getDoc(doc(db, "vendors", resolvedParams.id)),
+                    getDoc(doc(db, "system_settings", "global_config")),
+                ]);
+
+                if (!vendorSnap.exists()) {
+                    alert("ไม่พบข้อมูลคู่ค้านี้");
+                    router.push("/liff");
+                    return;
+                }
+
+                const vendor = vendorSnap.data() as Vendor;
+                setFormData({
+                    name: vendor.name || "",
+                    taxId: vendor.taxId || "",
+                    contactName: vendor.contactName || "",
+                    phone: vendor.phone || "",
+                    email: vendor.email || "",
+                    address: vendor.address || "",
+                    googleMapUrl: vendor.googleMapUrl || "",
+                    vendorTypes: vendor.vendorTypes || [],
+                    isActive: typeof vendor.isActive === "boolean" ? vendor.isActive : true,
+                });
+
+                if (configSnap.exists()) {
+                    const config = configSnap.data();
+                    setAvailableTypes(Array.isArray(config.vendorTypes) ? config.vendorTypes : []);
                 }
             } catch (error) {
-                console.error("Error fetching vendor types:", error);
+                console.error("Error fetching vendor data:", error);
+                alert("ไม่สามารถโหลดข้อมูลคู่ค้าได้");
+            } finally {
+                setLoading(false);
             }
         }
-        fetchVendorTypes();
-    }, []);
 
-    const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
+        fetchData();
+    }, [resolvedParams.id, router]);
+
+    const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
         const { name, value } = e.target;
-        setFormData(prev => ({ ...prev, [name]: value }));
+        setFormData((prev) => ({
+            ...prev,
+            [name]: name === "isActive" ? value === "true" : value,
+        }));
     };
 
     const handleTypeChange = (type: string) => {
-        setFormData(prev => {
+        setFormData((prev) => {
             const currentTypes = prev.vendorTypes || [];
             if (currentTypes.includes(type)) {
-                return { ...prev, vendorTypes: currentTypes.filter(t => t !== type) };
-            } else {
-                return { ...prev, vendorTypes: [...currentTypes, type] };
+                return { ...prev, vendorTypes: currentTypes.filter((t) => t !== type) };
             }
+            return { ...prev, vendorTypes: [...currentTypes, type] };
         });
     };
 
@@ -69,52 +98,77 @@ export default function CreateVendorPage() {
         }
 
         setSaving(true);
-
         try {
-            const newVendor = {
-                ...formData,
-                createdAt: new Date().toISOString(),
+            const payload = {
+                name: formData.name || "",
+                taxId: formData.taxId || "",
+                contactName: formData.contactName || "",
+                phone: formData.phone || "",
+                email: formData.email || "",
+                address: formData.address || "",
+                googleMapUrl: formData.googleMapUrl || "",
+                vendorTypes: formData.vendorTypes || [],
+                isActive: typeof formData.isActive === "boolean" ? formData.isActive : true,
                 updatedAt: new Date().toISOString(),
             };
 
-            await addDoc(collection(db, "vendors"), newVendor);
-
+            await updateDoc(doc(db, "vendors", resolvedParams.id), payload);
             router.push("/liff");
         } catch (error) {
-            console.error("Error adding vendor:", error);
+            console.error("Error updating vendor:", error);
             alert("ไม่สามารถบันทึกข้อมูลคู่ค้าได้ โปรดลองอีกครั้ง");
             setSaving(false);
         }
     };
 
+    if (loading) {
+        return (
+            <div className="flex min-h-screen flex-col items-center justify-center bg-slate-100 p-8">
+                <Loader2 className="mb-4 h-8 w-8 animate-spin text-blue-600" />
+                <p className="text-sm text-slate-500">กำลังโหลดข้อมูลคู่ค้า...</p>
+            </div>
+        );
+    }
+
     return (
         <div className="min-h-screen bg-slate-100">
             <div className="mx-auto w-full max-w-4xl space-y-5 px-4 py-5 md:py-6">
-
                 <div className="rounded-lg border border-slate-200 bg-white p-4 md:p-5">
                     <div className="flex items-center space-x-3">
                         <Link href="/liff" className="inline-flex h-9 w-9 items-center justify-center rounded-md border border-slate-300 bg-white text-slate-600 hover:bg-slate-50 transition-colors">
                             <ArrowLeft size={18} />
                         </Link>
                         <div>
-                            <h1 className="text-xl md:text-2xl font-semibold text-slate-900">เพิ่มรายชื่อคู่ค้าใหม่</h1>
-                            <p className="text-sm text-slate-500 mt-1">
-                                กรอกรายละเอียดบริษัทผู้ขายใหม่เข้าสู่ระบบ
-                            </p>
+                            <h1 className="text-xl md:text-2xl font-semibold text-slate-900">แก้ไขข้อมูลคู่ค้า</h1>
+                            <p className="text-sm text-slate-500 mt-1">อัปเดตรายละเอียดและสถานะการใช้งานคู่ค้า</p>
                         </div>
                     </div>
                 </div>
 
                 <form onSubmit={handleSave} className="bg-white rounded-lg border border-slate-200 overflow-hidden">
                     <div className="p-5 md:p-6 space-y-6">
-
-                        <div className="flex items-center space-x-3 mb-4">
-                            <div className="h-10 w-10 bg-blue-50 text-blue-700 rounded-md border border-blue-200 flex items-center justify-center">
-                                <Building2 size={20} />
+                        <div className="flex items-center justify-between gap-4">
+                            <div className="flex items-center space-x-3">
+                                <div className="h-10 w-10 bg-blue-50 text-blue-700 rounded-md border border-blue-200 flex items-center justify-center">
+                                    <Building2 size={20} />
+                                </div>
+                                <div>
+                                    <h3 className="text-base font-semibold text-slate-900">ข้อมูลบริษัท</h3>
+                                    <p className="text-sm text-slate-500">รายละเอียดพื้นฐานของนิติบุคคล</p>
+                                </div>
                             </div>
-                            <div>
-                                <h3 className="text-base font-semibold text-slate-900">ข้อมูลบริษัท</h3>
-                                <p className="text-sm text-slate-500">รายละเอียดพื้นฐานของนิติบุคคล</p>
+
+                            <div className="w-40">
+                                <label className="block text-sm font-medium text-slate-700 mb-1.5">สถานะใช้งาน</label>
+                                <select
+                                    name="isActive"
+                                    value={formData.isActive ? "true" : "false"}
+                                    onChange={handleChange}
+                                    className="w-full border border-slate-300 rounded-md py-2.5 px-3 text-sm focus:ring-blue-500 focus:border-blue-500 bg-white"
+                                >
+                                    <option value="true">เปิดใช้งาน</option>
+                                    <option value="false">ปิดใช้งาน</option>
+                                </select>
                             </div>
                         </div>
 
@@ -125,7 +179,7 @@ export default function CreateVendorPage() {
                                     type="text"
                                     name="name"
                                     required
-                                    value={formData.name}
+                                    value={formData.name || ""}
                                     onChange={handleChange}
                                     placeholder="เช่น บริษัท บุญถาวรเซรามิค จำกัด"
                                     className="w-full border border-slate-300 rounded-md py-2.5 px-3 text-sm focus:ring-blue-500 focus:border-blue-500 bg-white"
@@ -137,7 +191,7 @@ export default function CreateVendorPage() {
                                 <input
                                     type="text"
                                     name="taxId"
-                                    value={formData.taxId}
+                                    value={formData.taxId || ""}
                                     onChange={handleChange}
                                     placeholder="เลขประจำตัวผู้เสียภาษี 13 หลัก (ถ้าระบุ)"
                                     className="w-full border border-slate-300 rounded-md py-2.5 px-3 text-sm focus:ring-blue-500 focus:border-blue-500 bg-white font-mono"
@@ -148,7 +202,6 @@ export default function CreateVendorPage() {
                         {availableTypes.length > 0 && (
                             <>
                                 <hr className="border-slate-200 my-6" />
-
                                 <div className="flex items-center space-x-3 mb-3">
                                     <div className="h-10 w-10 bg-blue-50 text-blue-700 rounded-md border border-blue-200 flex items-center justify-center">
                                         <Tag size={18} />
@@ -160,14 +213,14 @@ export default function CreateVendorPage() {
                                 </div>
 
                                 <div className="flex flex-wrap gap-2">
-                                    {availableTypes.map(type => {
+                                    {availableTypes.map((type) => {
                                         const isSelected = formData.vendorTypes?.includes(type);
                                         return (
                                             <button
                                                 key={type}
                                                 type="button"
                                                 onClick={() => handleTypeChange(type)}
-                                                className={`px-3 py-1.5 rounded-md text-sm font-medium border transition-colors ${isSelected ? 'bg-blue-50 border-blue-300 text-blue-700' : 'bg-white border-slate-300 text-slate-600 hover:bg-slate-50'}`}
+                                                className={`px-3 py-1.5 rounded-md text-sm font-medium border transition-colors ${isSelected ? "bg-blue-50 border-blue-300 text-blue-700" : "bg-white border-slate-300 text-slate-600 hover:bg-slate-50"}`}
                                             >
                                                 {type}
                                             </button>
@@ -178,7 +231,6 @@ export default function CreateVendorPage() {
                         )}
 
                         <hr className="border-slate-200 my-6" />
-
                         <h3 className="text-base font-semibold text-slate-900 mb-3">ข้อมูลการติดต่อ</h3>
 
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
@@ -188,7 +240,7 @@ export default function CreateVendorPage() {
                                     type="text"
                                     name="contactName"
                                     required
-                                    value={formData.contactName}
+                                    value={formData.contactName || ""}
                                     onChange={handleChange}
                                     placeholder="ชื่อ-นามสกุล ของผู้แทนฝ่ายขาย"
                                     className="w-full border border-slate-300 rounded-md py-2.5 px-3 text-sm focus:ring-blue-500 focus:border-blue-500 bg-white"
@@ -201,7 +253,7 @@ export default function CreateVendorPage() {
                                     type="text"
                                     name="phone"
                                     required
-                                    value={formData.phone}
+                                    value={formData.phone || ""}
                                     onChange={handleChange}
                                     placeholder="เช่น 081-xxx-xxxx"
                                     className="w-full border border-slate-300 rounded-md py-2.5 px-3 text-sm focus:ring-blue-500 focus:border-blue-500 bg-white"
@@ -213,7 +265,7 @@ export default function CreateVendorPage() {
                                 <input
                                     type="email"
                                     name="email"
-                                    value={formData.email}
+                                    value={formData.email || ""}
                                     onChange={handleChange}
                                     placeholder="email@vendor.com"
                                     className="w-full border border-slate-300 rounded-md py-2.5 px-3 text-sm focus:ring-blue-500 focus:border-blue-500 bg-white"
@@ -224,7 +276,7 @@ export default function CreateVendorPage() {
                                 <label className="block text-sm font-medium text-slate-700 mb-1.5">ที่อยู่ธุรกิจ</label>
                                 <textarea
                                     name="address"
-                                    value={formData.address}
+                                    value={formData.address || ""}
                                     onChange={handleChange}
                                     rows={3}
                                     placeholder="ที่อยู่สำหรับออกใบแจ้งหนี้ / ใบเสร็จรับเงิน..."
@@ -244,7 +296,6 @@ export default function CreateVendorPage() {
                                 />
                             </div>
                         </div>
-
                     </div>
 
                     <div className="bg-slate-50 px-5 py-4 border-t border-slate-200 flex justify-end space-x-3">
@@ -260,11 +311,10 @@ export default function CreateVendorPage() {
                             className="inline-flex items-center justify-center rounded-md bg-blue-700 px-4 py-2.5 text-sm font-semibold text-white hover:bg-blue-600 disabled:opacity-50 transition-colors"
                         >
                             {saving ? <Loader2 size={16} className="mr-2 animate-spin" /> : <Save size={16} className="mr-2" />}
-                            บันทึกข้อมูลคู่ค้า
+                            อัปเดตข้อมูลคู่ค้า
                         </button>
                     </div>
                 </form>
-
             </div>
         </div>
     );

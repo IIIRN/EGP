@@ -95,8 +95,8 @@ export default function LiffBindingPage() {
     if (success) {
         return (
             <div className="min-h-screen bg-white flex flex-col items-center justify-center p-6 text-center">
-                <div className="w-20 h-20 bg-green-100 rounded-full flex items-center justify-center mb-6 shadow-sm">
-                    <CheckCircle2 className="w-12 h-12 text-green-600" />
+                <div className="w-20 h-20 bg-blue-100 rounded-full flex items-center justify-center mb-6 border border-blue-200">
+                    <CheckCircle2 className="w-12 h-12 text-blue-700" />
                 </div>
                 <h1 className="text-2xl font-bold text-slate-800 mb-2">เชื่อมต่อ LINE สำเร็จ!</h1>
                 <p className="text-slate-500 mb-8 max-w-sm">บัญชีผู้ใช้งานระบบ EGP ของคุณได้ถูกผูกกับ LINE เรียบร้อยแล้ว</p>
@@ -111,26 +111,22 @@ export default function LiffBindingPage() {
     }
 
     return (
-        <div className="min-h-screen bg-slate-50 flex flex-col p-6 items-center justify-center">
-            <div className="w-full max-w-sm w-full bg-white rounded-3xl shadow-xl overflow-hidden overflow-visible border border-slate-100/50">
+        <div className="min-h-screen bg-slate-100 flex flex-col p-6 items-center justify-center">
+            <div className="w-full max-w-sm bg-white rounded-xl overflow-hidden border border-slate-200">
 
-                <div className="bg-gradient-to-br from-[#00c300] to-[#00a000] p-8 text-center relative overflow-hidden">
-                    {/* Background Pattern */}
-                    <div className="absolute top-0 right-0 w-32 h-32 bg-white opacity-10 rounded-full -mr-16 -mt-16 blur-2xl"></div>
-                    <div className="absolute bottom-0 left-0 w-40 h-40 bg-white opacity-10 rounded-full -ml-20 -mb-20 blur-3xl"></div>
-
-                    <p className="text-white/80 font-medium mb-4 text-sm tracking-wide z-10 relative">เชื่อมต่อระบบ EGP</p>
+                <div className="bg-blue-700 p-8 text-center border-b border-blue-800">
+                    <p className="text-blue-100 font-medium mb-4 text-sm tracking-wide">เชื่อมต่อระบบ EGP</p>
                     {lineProfile?.pictureUrl ? (
-                        <div className="w-24 h-24 mx-auto rounded-full p-1 bg-white shadow-xl relative z-10">
+                        <div className="w-24 h-24 mx-auto rounded-full p-1 bg-white border border-blue-100">
                             <img src={lineProfile.pictureUrl} alt="Profile" className="w-full h-full rounded-full object-cover" />
-                            <div className="absolute bottom-0 right-0 w-6 h-6 bg-green-500 border-2 border-white rounded-full"></div>
+                            <div className="absolute bottom-0 right-0 w-6 h-6 bg-blue-600 border-2 border-white rounded-full"></div>
                         </div>
                     ) : (
-                        <div className="w-24 h-24 mx-auto rounded-full bg-white/20 flex items-center justify-center border-4 border-white shadow-xl relative z-10">
+                        <div className="w-24 h-24 mx-auto rounded-full bg-blue-600/20 flex items-center justify-center border-2 border-white">
                             <Loader2 className="w-8 h-8 text-white animate-spin" />
                         </div>
                     )}
-                    <h2 className="text-white font-bold text-lg mt-5 z-10 relative">{lineProfile?.displayName || "กำลังโหลด..."}</h2>
+                    <h2 className="text-white font-bold text-lg mt-5">{lineProfile?.displayName || "กำลังโหลด..."}</h2>
                 </div>
 
                 <div className="p-8 pb-10">
@@ -156,7 +152,7 @@ export default function LiffBindingPage() {
                                 required
                                 value={phoneNumber}
                                 onChange={(e) => setPhoneNumber(e.target.value)}
-                                className="block w-full pl-12 pr-4 py-4 bg-slate-50 border border-slate-200 rounded-2xl text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-[#00c300] focus:border-transparent focus:bg-white transition-all text-base font-medium font-sans"
+                                className="block w-full pl-12 pr-4 py-4 bg-slate-50 border border-slate-300 rounded-lg text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-200 focus:border-blue-500 focus:bg-white transition-colors text-base font-medium font-sans"
                                 placeholder="0812345678"
                             />
                         </div>
@@ -164,7 +160,7 @@ export default function LiffBindingPage() {
                         <button
                             type="submit"
                             disabled={verifying}
-                            className="w-full flex items-center justify-center py-4 px-4 bg-[#00c300] hover:bg-[#00a000] text-white rounded-2xl font-bold shadow-lg shadow-green-500/30 transition-all font-sans disabled:opacity-70 disabled:cursor-not-allowed group"
+                            className="w-full flex items-center justify-center py-4 px-4 bg-blue-700 hover:bg-blue-600 text-white rounded-lg font-bold transition-colors font-sans disabled:opacity-70 disabled:cursor-not-allowed group"
                         >
                             {verifying ? (
                                 <Loader2 className="w-5 h-5 animate-spin mr-2" />

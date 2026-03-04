@@ -89,23 +89,7 @@ export default function LiffCreateVOPage() {
                 updatedAt: serverTimestamp(),
             };
 
-            const docRef = await addDoc(collection(db, "variation_orders"), newVO);
-
-            if (status === "pending") {
-                try {
-                    await fetch("/api/line/notify", {
-                        method: "POST",
-                        headers: { "Content-Type": "application/json" },
-                        body: JSON.stringify({
-                            type: "VO",
-                            data: { ...newVO, id: docRef.id },
-                            projectName: currentProject.name
-                        })
-                    });
-                } catch (e) {
-                    console.error("Line notification failed:", e);
-                }
-            }
+            await addDoc(collection(db, "variation_orders"), newVO);
 
             setSuccess(true);
             setTimeout(() => {
@@ -123,28 +107,28 @@ export default function LiffCreateVOPage() {
         return (
             <div className="flex flex-col items-center justify-center p-8 h-screen bg-slate-50 text-center">
                 <p className="text-slate-500 mb-6 text-sm">กรุณารอสักครู่ กำลังโหลดโครงการ...</p>
-                <Loader2 className="animate-spin text-orange-500" size={32} />
+                <Loader2 className="animate-spin text-blue-600" size={32} />
             </div>
         );
     }
 
     return (
-        <div className="min-h-screen bg-slate-50 pb-24">
+        <div className="min-h-screen bg-slate-100 pb-24">
             {/* Header */}
-            <div className="bg-orange-600 text-white p-4 pt-6 shadow-md sticky top-0 z-40 flex items-center">
-                <Link href="/liff" className="mr-3 p-1 bg-white/10 rounded-full hover:bg-white/20 transition-colors">
+            <div className="bg-white text-slate-900 p-4 pt-6 border-b border-slate-200 sticky top-0 z-40 flex items-center">
+                <Link href="/liff" className="mr-3 p-1 bg-slate-100 rounded-full hover:bg-slate-200 transition-colors text-slate-700">
                     <ArrowLeft size={20} />
                 </Link>
                 <div>
                     <h1 className="text-lg font-bold leading-tight">สร้างงานเพิ่ม-ลด (VO)</h1>
-                    <p className="text-xs text-orange-100">{currentProject.name}</p>
+                    <p className="text-xs text-slate-500">{currentProject.name}</p>
                 </div>
             </div>
 
             <main className="p-4 space-y-6">
 
                 {/* General Info */}
-                <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-100 space-y-4">
+                <div className="bg-white p-4 rounded-xl border border-slate-200 space-y-4">
                     <div>
                         <label className="block text-sm font-bold text-slate-800 mb-2">หัวข้องาน <span className="text-red-500">*</span></label>
                         <input
@@ -152,7 +136,7 @@ export default function LiffCreateVOPage() {
                             value={title}
                             onChange={(e) => setTitle(e.target.value)}
                             placeholder="เช่น ขอเพิ่มไฟ LED บริเวณโถงนิทรรศการ"
-                            className="w-full border border-slate-300 rounded-lg py-3 px-3 text-sm focus:ring-orange-500 focus:border-orange-500 bg-white"
+                            className="w-full border border-slate-300 rounded-lg py-3 px-3 text-sm focus:ring-blue-500 focus:border-blue-500 bg-white"
                         />
                     </div>
 
@@ -163,14 +147,14 @@ export default function LiffCreateVOPage() {
                             onChange={(e) => setReason(e.target.value)}
                             rows={3}
                             placeholder="อธิบายสรุปสั้นๆ..."
-                            className="w-full border border-slate-300 rounded-lg py-3 px-3 text-sm focus:ring-orange-500 focus:border-orange-500 bg-white"
+                            className="w-full border border-slate-300 rounded-lg py-3 px-3 text-sm focus:ring-blue-500 focus:border-blue-500 bg-white"
                         />
                     </div>
                 </div>
 
                 {/* Items List */}
-                <div className="bg-white rounded-xl shadow-sm border border-slate-100 overflow-hidden">
-                    <div className="p-4 border-b border-slate-100 flex justify-between items-center bg-slate-50">
+                <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
+                    <div className="p-4 border-b border-slate-200 flex justify-between items-center bg-slate-50">
                         <h3 className="font-bold text-slate-800 text-sm">รายการงาน/วัสดุที่แก้ไข</h3>
                     </div>
 
@@ -187,7 +171,7 @@ export default function LiffCreateVOPage() {
                                         <select
                                             value={item.type}
                                             onChange={(e) => handleItemChange(item.id!, 'type', e.target.value)}
-                                            className={`w-full text-xs border rounded-lg py-2.5 px-2 font-bold focus:ring-0 ${item.type === 'add' ? 'bg-red-50 text-red-700 border-red-200' : 'bg-green-50 text-green-700 border-green-200'}`}
+                                            className={`w-full text-xs border rounded-lg py-2.5 px-2 font-bold focus:ring-0 ${item.type === 'add' ? 'bg-blue-50 text-blue-700 border-blue-200' : 'bg-slate-100 text-slate-700 border-slate-300'}`}
                                         >
                                             <option value="add">เพิ่มค่าใช้จ่าย</option>
                                             <option value="omit">ลดค่าใช้จ่าย</option>
@@ -202,7 +186,7 @@ export default function LiffCreateVOPage() {
                                         value={item.description}
                                         onChange={(e) => handleItemChange(item.id!, 'description', e.target.value)}
                                         placeholder="เช่น โคมไฟดาวน์ไลท์พร้อมติดตั้ง"
-                                        className="w-full text-sm border border-slate-200 rounded-lg py-2.5 px-3 focus:ring-1 focus:ring-orange-500 focus:border-orange-500"
+                                        className="w-full text-sm border border-slate-200 rounded-lg py-2.5 px-3 focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
                                     />
                                 </div>
 
@@ -213,7 +197,7 @@ export default function LiffCreateVOPage() {
                                             type="number"
                                             value={item.quantity}
                                             onChange={(e) => handleItemChange(item.id!, 'quantity', Number(e.target.value))}
-                                            className="w-full text-sm border border-slate-200 rounded-lg py-2.5 px-3 focus:ring-1 focus:ring-orange-500 focus:border-orange-500"
+                                            className="w-full text-sm border border-slate-200 rounded-lg py-2.5 px-3 focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
                                         />
                                     </div>
                                     <div className="flex-1">
@@ -222,7 +206,7 @@ export default function LiffCreateVOPage() {
                                             type="text"
                                             value={item.unit}
                                             onChange={(e) => handleItemChange(item.id!, 'unit', e.target.value)}
-                                            className="w-full text-sm border border-slate-200 rounded-lg py-2.5 px-3 focus:ring-1 focus:ring-orange-500 focus:border-orange-500"
+                                            className="w-full text-sm border border-slate-200 rounded-lg py-2.5 px-3 focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
                                         />
                                     </div>
                                 </div>
@@ -234,12 +218,12 @@ export default function LiffCreateVOPage() {
                                             type="number"
                                             value={item.unitPrice}
                                             onChange={(e) => handleItemChange(item.id!, 'unitPrice', Number(e.target.value))}
-                                            className="w-full text-sm border border-slate-200 rounded-lg py-2.5 px-3 focus:ring-1 focus:ring-orange-500 focus:border-orange-500"
+                                            className="w-full text-sm border border-slate-200 rounded-lg py-2.5 px-3 focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
                                         />
                                     </div>
                                     <div className="flex-[2]">
                                         <label className="block text-xs font-semibold text-slate-500 mb-1">รวมผลกระทบ</label>
-                                        <div className={`w-full text-sm border border-slate-100 rounded-lg py-2 px-3 font-semibold text-right ${item.type === 'add' ? 'bg-red-50 text-red-600' : 'bg-green-50 text-green-600'}`}>
+                                        <div className={`w-full text-sm border border-slate-200 rounded-lg py-2 px-3 font-semibold text-right ${item.type === 'add' ? 'bg-blue-50 text-blue-700' : 'bg-slate-100 text-slate-700'}`}>
                                             {item.type === 'add' ? '+' : '-'}{(item.amount || 0).toLocaleString()}
                                         </div>
                                     </div>
@@ -258,10 +242,10 @@ export default function LiffCreateVOPage() {
                         ))}
                     </div>
 
-                    <div className="p-3 bg-slate-50 border-t border-slate-100">
+                    <div className="p-3 bg-slate-50 border-t border-slate-200">
                         <button
                             onClick={handleAddItem}
-                            className="w-full py-2.5 flex items-center justify-center text-sm font-semibold text-orange-600 bg-orange-50 rounded-lg hover:bg-orange-100 transition-colors"
+                            className="w-full py-2.5 flex items-center justify-center text-sm font-semibold text-blue-700 bg-blue-50 rounded-lg hover:bg-blue-100 transition-colors"
                         >
                             <Plus size={16} className="mr-1" /> เพิ่มรายการใหม่
                         </button>
@@ -269,10 +253,10 @@ export default function LiffCreateVOPage() {
                 </div>
 
                 {/* Summary */}
-                <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-100 space-y-2">
+                <div className="bg-white p-4 rounded-xl border border-slate-200 space-y-2">
                     <div className="flex justify-between items-center">
                         <span className="text-sm font-bold text-slate-800">สรุปการเปลี่ยนแปลงงบประมาณ</span>
-                        <span className={`text-lg font-bold ${totalAmount > 0 ? 'text-red-500' : totalAmount < 0 ? 'text-green-500' : 'text-slate-900'}`}>
+                        <span className={`text-lg font-bold ${totalAmount > 0 ? 'text-blue-700' : totalAmount < 0 ? 'text-slate-700' : 'text-slate-900'}`}>
                             {totalAmount > 0 ? '+' : ''}฿ {totalAmount.toLocaleString(undefined, { minimumFractionDigits: 2 })}
                         </span>
                     </div>
@@ -286,7 +270,7 @@ export default function LiffCreateVOPage() {
             </main>
 
             {/* Fixed Bottom Actions */}
-            <div className="fixed bottom-0 left-0 right-0 bg-white p-4 border-t border-slate-200 shadow-[0_-5px_15px_rgba(0,0,0,0.05)] z-50 flex gap-3 pb-8">
+            <div className="fixed bottom-0 left-0 right-0 bg-white p-4 border-t border-slate-200 z-50 flex gap-3 pb-8">
                 <button
                     onClick={() => handleSaveVO("draft")}
                     disabled={saving || success}
@@ -298,7 +282,7 @@ export default function LiffCreateVOPage() {
                 <button
                     onClick={() => handleSaveVO("pending")}
                     disabled={saving || success}
-                    className="flex-[1.5] flex justify-center items-center py-3 bg-orange-600 text-white rounded-xl font-bold text-sm shadow-md shadow-orange-200 hover:bg-orange-500 transition-colors"
+                    className="flex-[1.5] flex justify-center items-center py-3 bg-blue-700 text-white rounded-xl font-bold text-sm hover:bg-blue-600 transition-colors"
                 >
                     {saving ? <Loader2 size={18} className="mr-2 animate-spin" /> : <Send size={18} className="mr-2" />}
                     {success ? "สำเร็จ!" : "ส่งขออนุมัติ"}

@@ -1,4 +1,4 @@
-export const PROCESSING_FEE_LABEL = "ค่าดำเนินการ";
+﻿export const PROCESSING_FEE_LABEL = "ค่าดำเนินการ";
 
 export type CsvDocumentItem = {
     description: string;
@@ -132,4 +132,5 @@ export function splitProcessingFeeItem<T extends MinimalItem>(items: T[]) {
         processingFee,
     };
 }
+
 

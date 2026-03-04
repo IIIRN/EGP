@@ -160,7 +160,7 @@ function ApproveAction() {
 
     return (
         <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4">
-            <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-8 max-w-sm w-full text-center space-y-4">
+            <div className="bg-white rounded-xl border border-slate-200 p-8 max-w-sm w-full text-center space-y-4">
                 {status === "loading" && (
                     <div className="flex flex-col items-center justify-center py-6">
                         <Loader2 className="w-16 h-16 text-blue-500 animate-spin mb-4" />

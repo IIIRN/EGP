@@ -1,14 +1,21 @@
-import "@/app/globals.css";
-import type { Metadata } from "next";
+﻿import "@/app/globals.css";
+import type { Metadata, Viewport } from "next";
 import { Noto_Sans_Thai } from "next/font/google";
-import { AuthProvider } from "@/context/AuthContext";
 import { ProjectProvider } from "@/context/ProjectContext";
 
 const font = Noto_Sans_Thai({ subsets: ["latin", "thai"] });
 
 export const metadata: Metadata = {
-    title: "EGP - โหมดมือถือ / LINE LIFF",
-    description: "แอปพลิเคชันสำหรับใช้งานผ่านมือถือและ LINE LIFF",
+    title: "EGP - Mobile / LINE LIFF",
+    description: "Mobile app for LINE LIFF usage",
+};
+
+export const viewport: Viewport = {
+    width: "device-width",
+    initialScale: 1,
+    maximumScale: 1,
+    userScalable: false,
+    viewportFit: "cover",
 };
 
 export default function LiffLayout({
@@ -18,9 +25,7 @@ export default function LiffLayout({
 }) {
     return (
         <div className={`${font.className} text-slate-900 pb-20`}>
-            <ProjectProvider>
-                {children}
-            </ProjectProvider>
+            <ProjectProvider>{children}</ProjectProvider>
         </div>
     );
 }
