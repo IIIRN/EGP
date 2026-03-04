@@ -21,6 +21,7 @@ import { db } from "@/lib/firebase";
 import { PurchaseOrder } from "@/types/po";
 import { useAuth } from "@/context/AuthContext";
 import { useProject } from "@/context/ProjectContext";
+import { splitProcessingFeeItem } from "@/lib/documentItems";
 
 type FirestoreTimestampLike = {
     toDate?: () => Date;
@@ -150,6 +151,8 @@ export default function LiffPODetailPage({ params }: { params: Promise<{ id: str
 
     const isPending = po.status === "pending";
     const canApprove = userProfile?.role === "admin" || userProfile?.role === "pm";
+    const { items: displayItems, processingFee } = splitProcessingFeeItem(po.items || []);
+    const itemsTotalBeforeFee = displayItems.reduce((sum, item) => sum + (Number(item.amount) || 0), 0);
 
     const POStatusBadge = ({ status }: { status: string }) => {
         switch (status) {
@@ -253,8 +256,8 @@ export default function LiffPODetailPage({ params }: { params: Promise<{ id: str
                 )}
 
                 <section className="space-y-2">
-                    <h3 className="px-1 text-xs font-medium uppercase tracking-wide text-slate-500">รายการสั่งของ ({po.items.length})</h3>
-                    {po.items.map((item) => (
+                    <h3 className="px-1 text-xs font-medium uppercase tracking-wide text-slate-500">รายการสั่งของ ({displayItems.length})</h3>
+                    {displayItems.map((item) => (
                         <div key={item.id} className="flex gap-3 rounded-lg border border-slate-200 bg-white p-4">
                             <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md border border-slate-200 bg-slate-50 text-slate-600">
                                 <Box size={18} />
@@ -262,10 +265,12 @@ export default function LiffPODetailPage({ params }: { params: Promise<{ id: str
                             <div className="min-w-0 flex-1">
                                 <div className="flex items-start justify-between gap-2">
                                     <p className="truncate text-sm font-medium text-slate-900">{item.description}</p>
-                                    <p className="shrink-0 text-sm font-semibold text-slate-900">{formatMoney(item.amount)}</p>
+                                    <p className="shrink-0 text-sm font-semibold text-slate-900">
+                                        {item.isClosed ? "-" : formatMoney(item.amount)}
+                                    </p>
                                 </div>
                                 <p className="mt-1 text-xs text-slate-600">
-                                    {item.quantity} {item.unit} @ {formatMoney(item.unitPrice)}
+                                    {item.quantity} {item.unit} @ {item.isClosed ? "-" : formatMoney(item.unitPrice)}
                                 </p>
                             </div>
                         </div>
@@ -278,6 +283,14 @@ export default function LiffPODetailPage({ params }: { params: Promise<{ id: str
                         <p className="text-xs text-slate-500">THB</p>
                     </div>
                     <div className="space-y-2">
+                        <div className="flex items-center justify-between text-sm">
+                            <span className="text-slate-600">ราคารวม</span>
+                            <span className="font-medium text-slate-900">{formatMoney(itemsTotalBeforeFee)}</span>
+                        </div>
+                        <div className="flex items-center justify-between text-sm">
+                            <span className="text-slate-600">ค่าดำเนินการ</span>
+                            <span className="font-medium text-slate-900">{formatMoney(processingFee)}</span>
+                        </div>
                         <div className="flex items-center justify-between text-sm">
                             <span className="text-slate-600">รวมเป็นเงิน</span>
                             <span className="font-medium text-slate-900">{formatMoney(po.subTotal)}</span>
