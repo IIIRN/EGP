@@ -13,7 +13,7 @@ import { useRouter } from "next/navigation";
 export default function EditVOPage({ params }: { params: Promise<{ id: string }> }) {
     const resolvedParams = use(params);
     const { currentProject } = useProject();
-    const { user, userProfile } = useAuth();
+    const { user } = useAuth();
     const router = useRouter();
 
     const [vo, setVo] = useState<VariationOrder | null>(null);
@@ -80,7 +80,7 @@ export default function EditVOPage({ params }: { params: Promise<{ id: string }>
         ]);
     };
 
-    const handleItemChange = (id: string, field: keyof VOItem, value: any) => {
+    const handleItemChange = (id: string, field: keyof VOItem, value: string | number) => {
         const newItems = items.map(item => {
             if (item.id === id) {
                 const updated = { ...item, [field]: value };
@@ -107,6 +107,33 @@ export default function EditVOPage({ params }: { params: Promise<{ id: string }>
 
     const vatAmount = (subTotal * vatRate) / 100;
     const totalAmount = subTotal + vatAmount;
+
+    const formatCreatedAt = (value: unknown) => {
+        try {
+            if (value && typeof value === "object" && "toDate" in value) {
+                const timestamp = value as { toDate?: () => Date };
+                if (typeof timestamp.toDate === "function") {
+                    return timestamp.toDate().toLocaleDateString("th-TH");
+                }
+            }
+            if (value && typeof value === "object" && "seconds" in value) {
+                const unixTimestamp = value as { seconds?: number; nanoseconds?: number };
+                if (typeof unixTimestamp.seconds === "number") {
+                    const millis = (unixTimestamp.seconds * 1000) + Math.floor((unixTimestamp.nanoseconds ?? 0) / 1_000_000);
+                    return new Date(millis).toLocaleDateString("th-TH");
+                }
+            }
+            if (typeof value === "string" || typeof value === "number" || value instanceof Date) {
+                const date = new Date(value);
+                if (!Number.isNaN(date.getTime())) {
+                    return date.toLocaleDateString("th-TH");
+                }
+            }
+        } catch {
+            // Ignore malformed date values and fallback.
+        }
+        return "ไม่ระบุ";
+    };
 
     const handleUpdateVO = async (status: "draft" | "pending") => {
         if (!currentProject || !user) return;
@@ -143,6 +170,21 @@ export default function EditVOPage({ params }: { params: Promise<{ id: string }>
 
             const voRef = doc(db, "variation_orders", resolvedParams.id);
             await updateDoc(voRef, updatedVO);
+            if (status === "pending") {
+                try {
+                    await fetch("/api/line/notify", {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({
+                            type: "VO",
+                            data: { ...updatedVO, id: resolvedParams.id, voNumber: vo?.voNumber || "N/A" },
+                            projectName: currentProject.name,
+                        }),
+                    });
+                } catch (e) {
+                    console.error("Line notification failed:", e);
+                }
+            }
 
             setSuccess(true);
             setTimeout(() => {
@@ -208,10 +250,10 @@ export default function EditVOPage({ params }: { params: Promise<{ id: string }>
                     <button
                         onClick={() => handleUpdateVO("pending")}
                         disabled={saving || success}
-                        className="inline-flex items-center justify-center rounded-lg bg-orange-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-orange-500 disabled:opacity-50 transition-colors"
+                        className="inline-flex items-center justify-center rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-blue-500 disabled:opacity-50 transition-colors"
                     >
                         {saving ? <Loader2 size={16} className="mr-2 animate-spin" /> : <Send size={16} className="mr-2" />}
-                        {success ? "สำเร็จ!" : "ส่งขออนุมัติดำเนินการใหม่อีกครั้ง"}
+                        {success ? "สำเร็จ!" : "ส่งขออนุมัติใหม่อีกครั้ง"}
                     </button>
                 </div>
             </div>
@@ -239,7 +281,7 @@ export default function EditVOPage({ params }: { params: Promise<{ id: string }>
                             </div>
                             <div>
                                 <label className="block text-sm font-medium text-slate-700 mb-1">วันที่สร้าง (ไม่สามารถเปลี่ยนได้)</label>
-                                <input type="text" disabled value={vo.createdAt ? (vo.createdAt as any).toDate().toLocaleDateString('th-TH') : 'ไม่ระบุ'} className="w-full border border-slate-200 bg-slate-50 rounded-lg py-2 px-3 text-sm text-slate-500 cursor-not-allowed" />
+                                <input type="text" disabled value={formatCreatedAt(vo.createdAt)} className="w-full border border-slate-200 bg-slate-50 rounded-lg py-2 px-3 text-sm text-slate-500 cursor-not-allowed" />
                             </div>
                         </div>
 

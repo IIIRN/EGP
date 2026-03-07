@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import { use, useEffect, useState, ChangeEvent } from "react";
 import { useProject } from "@/context/ProjectContext";
@@ -44,6 +44,7 @@ export default function EditPOPage({ params }: { params: Promise<{ id: string }>
 
     const [items, setItems] = useState<Partial<POItem>[]>([createEmptyItem("1")]);
     const [processingFee, setProcessingFee] = useState(0);
+    const [isAllPricesClosed, setIsAllPricesClosed] = useState(false);
     const [vendorId, setVendorId] = useState("");
     const [vendors, setVendors] = useState<Vendor[]>([]);
     const [vatRate, setVatRate] = useState(7);
@@ -105,6 +106,7 @@ export default function EditPOPage({ params }: { params: Promise<{ id: string }>
                         const normalizedItems = baseItems.map((item) => ({ ...item, isClosed: Boolean(item.isClosed) }));
                         setItems(normalizedItems.length > 0 ? normalizedItems : [createEmptyItem("1")]);
                         setProcessingFee(fee);
+                        setIsAllPricesClosed(normalizedItems.some(i => i.isClosed));
                     }
                 } else {
                     console.error("No such document!");
@@ -184,11 +186,7 @@ export default function EditPOPage({ params }: { params: Promise<{ id: string }>
         setItems(items.filter(item => item.id !== id));
     };
 
-    const toggleItemClosed = (id: string) => {
-        setItems(items.map((item) => (
-            item.id === id ? { ...item, isClosed: !item.isClosed } : item
-        )));
-    };
+
 
     const handleImportCsv = (event: ChangeEvent<HTMLInputElement>) => {
         const file = event.target.files?.[0];
@@ -235,7 +233,7 @@ export default function EditPOPage({ params }: { params: Promise<{ id: string }>
         reader.readAsText(file, "utf-8");
     };
 
-    const normalizedProcessingFee = Math.max(0, Number(processingFee) || 0);
+    const normalizedProcessingFee = po?.poType === 'extra' ? 0 : Math.max(0, Number(processingFee) || 0);
     const itemsTotalBeforeFee = items.reduce((sum, item) => sum + (item.amount || 0), 0);
 
     const formatCreatedAt = (value: unknown) => {
@@ -282,7 +280,7 @@ export default function EditPOPage({ params }: { params: Promise<{ id: string }>
                     unit: item.unit || "",
                     unitPrice,
                     amount: quantity * unitPrice,
-                    isClosed: Boolean(item.isClosed),
+                    isClosed: Boolean(isAllPricesClosed),
                 };
             });
 
@@ -452,7 +450,18 @@ export default function EditPOPage({ params }: { params: Promise<{ id: string }>
                     <div>
                         <div className="flex flex-col gap-2 md:flex-row md:justify-between md:items-end mb-4">
                             <h3 className="text-lg font-semibold text-slate-800">รายการสั่งซื้อ</h3>
-                            <p className="text-xs text-slate-500">รองรับ CSV: description, quantity, unit, unitPrice (มีหัวตารางหรือไม่มีก็ได้)</p>
+                            <div className="flex flex-col md:flex-row items-start md:items-center gap-3 md:gap-4">
+                                <label className="inline-flex items-center gap-2 text-sm text-slate-700 bg-slate-50 border border-slate-200 px-3 py-1.5 rounded-lg cursor-pointer hover:bg-slate-100 transition-colors">
+                                    <input
+                                        type="checkbox"
+                                        checked={isAllPricesClosed}
+                                        onChange={(e) => setIsAllPricesClosed(e.target.checked)}
+                                        className="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                                    />
+                                    <span className="font-semibold text-blue-700">ปิดราคาทุกรายการ</span>
+                                </label>
+                                <p className="text-xs text-slate-500 hidden md:block">รองรับ CSV: description, quantity, unit, unitPrice</p>
+                            </div>
                         </div>
 
                         <div className="md:hidden flex items-center gap-2 mb-3">
@@ -470,7 +479,7 @@ export default function EditPOPage({ params }: { params: Promise<{ id: string }>
 
                         <div className="md:hidden space-y-3 mb-3">
                             {items.map((item, index) => (
-                                <div key={item.id} className={`rounded-xl border p-3 ${item.isClosed ? "border-blue-200 bg-blue-50/40" : "border-slate-200 bg-white"}`}>
+                                <div key={item.id} className={`rounded-xl border p-3 ${isAllPricesClosed ? "border-blue-200 bg-blue-50/40" : "border-slate-200 bg-white"}`}>
                                     <div className="flex items-center justify-between mb-2">
                                         <p className="text-xs font-semibold text-slate-500">รายการที่ {index + 1}</p>
                                         <button
@@ -521,21 +530,12 @@ export default function EditPOPage({ params }: { params: Promise<{ id: string }>
                                             type="number"
                                             value={item.unitPrice}
                                             onChange={(e) => handleItemChange(item.id!, "unitPrice", Number(e.target.value))}
-                                            disabled={Boolean(item.isClosed)}
-                                            className={`w-full h-10 border rounded-lg px-3 text-sm text-right ${item.isClosed ? "border-slate-200 bg-slate-100 text-slate-500" : "border-slate-300 focus:border-blue-500 focus:ring-1 focus:ring-blue-500"}`}
+                                            disabled={isAllPricesClosed}
+                                            className={`w-full h-10 border rounded-lg px-3 text-sm text-right ${isAllPricesClosed ? "border-slate-200 bg-slate-100 text-slate-500 cursor-not-allowed" : "border-slate-300 focus:border-blue-500 focus:ring-1 focus:ring-blue-500"}`}
                                         />
                                     </div>
 
-                                    <div className="mt-3 flex items-center justify-between">
-                                        <label className="inline-flex items-center gap-2 text-xs text-slate-600">
-                                            <input
-                                                type="checkbox"
-                                                checked={Boolean(item.isClosed)}
-                                                onChange={() => toggleItemClosed(item.id!)}
-                                                className="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
-                                            />
-                                            ปิดราคา
-                                        </label>
+                                    <div className="mt-3 flex items-center justify-end">
                                         <div className="text-right">
                                             <p className="text-[11px] text-slate-500">รวม</p>
                                             <p className="text-sm font-semibold text-slate-900">
@@ -553,16 +553,18 @@ export default function EditPOPage({ params }: { params: Promise<{ id: string }>
                                         {itemsTotalBeforeFee.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                                     </span>
                                 </div>
-                                <div>
-                                    <label className="block text-xs text-slate-500 mb-1">{PROCESSING_FEE_LABEL}</label>
-                                    <input
-                                        type="number"
-                                        min="0"
-                                        value={processingFee}
-                                        onChange={(e) => setProcessingFee(Number(e.target.value))}
-                                        className="w-full h-10 border border-slate-300 rounded-lg px-3 text-sm text-right focus:border-blue-500 focus:ring-1 focus:ring-blue-500 bg-white"
-                                    />
-                                </div>
+                                {po?.poType !== 'extra' && (
+                                    <div>
+                                        <label className="block text-xs text-slate-500 mb-1">{PROCESSING_FEE_LABEL}</label>
+                                        <input
+                                            type="number"
+                                            min="0"
+                                            value={processingFee}
+                                            onChange={(e) => setProcessingFee(Number(e.target.value))}
+                                            className="w-full h-10 border border-slate-300 rounded-lg px-3 text-sm text-right focus:border-blue-500 focus:ring-1 focus:ring-blue-500 bg-white"
+                                        />
+                                    </div>
+                                )}
                             </div>
                         </div>
 
@@ -576,13 +578,12 @@ export default function EditPOPage({ params }: { params: Promise<{ id: string }>
                                         <th scope="col" className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase">หน่วย</th>
                                         <th scope="col" className="px-4 py-3 text-right text-xs font-semibold text-slate-500 uppercase">ราคา/หน่วย</th>
                                         <th scope="col" className="px-4 py-3 text-right text-xs font-semibold text-slate-500 uppercase">รวมเป็นเงิน</th>
-                                        <th scope="col" className="px-4 py-3 text-center text-xs font-semibold text-slate-500 uppercase">ปิด</th>
                                         <th scope="col" className="px-4 py-3"></th>
                                     </tr>
                                 </thead>
                                 <tbody className="bg-white divide-y divide-slate-100">
                                     {items.map((item, index) => (
-                                        <tr key={item.id} className={`group ${item.isClosed ? "bg-blue-50/30" : ""}`}>
+                                        <tr key={item.id} className={`group ${isAllPricesClosed ? "bg-blue-50/30" : ""}`}>
                                             <td className="px-4 py-3 text-sm text-slate-400 font-medium">{index + 1}</td>
                                             <td className="px-4 py-3">
                                                 <input
@@ -618,21 +619,12 @@ export default function EditPOPage({ params }: { params: Promise<{ id: string }>
                                                     type="number"
                                                     value={item.unitPrice}
                                                     onChange={(e) => handleItemChange(item.id!, "unitPrice", Number(e.target.value))}
-                                                    disabled={Boolean(item.isClosed)}
-                                                    className={`w-24 text-sm text-right border rounded py-1 px-2 ${item.isClosed ? "border-slate-200 bg-slate-100 text-slate-500 cursor-not-allowed" : "border-slate-200 focus:border-blue-500 focus:ring-1 focus:ring-blue-500"}`}
+                                                    disabled={isAllPricesClosed}
+                                                    className={`w-24 text-sm text-right border rounded py-1 px-2 ${isAllPricesClosed ? "border-slate-200 bg-slate-100 text-slate-500 cursor-not-allowed" : "border-slate-200 focus:border-blue-500 focus:ring-1 focus:ring-blue-500"}`}
                                                 />
                                             </td>
                                             <td className="px-4 py-3 text-right text-sm font-medium text-slate-900">
                                                 {item.amount?.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                                            </td>
-                                            <td className="px-4 py-3 text-center">
-                                                <input
-                                                    type="checkbox"
-                                                    checked={Boolean(item.isClosed)}
-                                                    onChange={() => toggleItemClosed(item.id!)}
-                                                    title="ปิดราคา (ล็อกราคาในรายการ)"
-                                                    className="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
-                                                />
                                             </td>
                                             <td className="px-4 py-3 text-right">
                                                 <button
@@ -644,40 +636,8 @@ export default function EditPOPage({ params }: { params: Promise<{ id: string }>
                                             </td>
                                         </tr>
                                     ))}
-                                    <tr className="bg-slate-50/70">
-                                        <td className="px-4 py-3 text-sm text-slate-700 font-semibold">{items.length + 1}</td>
-                                        <td className="px-4 py-3 text-sm font-semibold text-slate-900">ราคารวม</td>
-                                        <td className="px-4 py-3"></td>
-                                        <td className="px-4 py-3"></td>
-                                        <td className="px-4 py-3"></td>
-                                        <td className="px-4 py-3 text-right text-sm font-semibold text-slate-900">
-                                            {itemsTotalBeforeFee.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                                        </td>
-                                        <td className="px-4 py-3"></td>
-                                        <td className="px-4 py-3"></td>
-                                    </tr>
-                                    <tr className="bg-slate-50/70">
-                                        <td className="px-4 py-3 text-sm text-slate-700 font-semibold">{items.length + 2}</td>
-                                        <td className="px-4 py-3 text-sm font-semibold text-slate-900">
-                                            {PROCESSING_FEE_LABEL}
-                                        </td>
-                                        <td className="px-4 py-3 text-sm text-slate-500"></td>
-                                        <td className="px-4 py-3 text-sm text-slate-500"></td>
-                                        <td className="px-4 py-3 text-right">
-                                            <input
-                                                type="number"
-                                                min="0"
-                                                value={processingFee}
-                                                onChange={(e) => setProcessingFee(Number(e.target.value))}
-                                                className="w-24 text-sm text-right border border-slate-300 rounded py-1 px-2 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 bg-white"
-                                            />
-                                        </td>
-                                        <td className="px-4 py-3 text-right text-sm font-semibold text-slate-900">
-                                            {normalizedProcessingFee.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                                        </td>
-                                        <td className="px-4 py-3"></td>
-                                        <td className="px-4 py-3"></td>
-                                    </tr>
+                                    
+                                    
                                 </tbody>
                             </table>
                             {availableUnits.length > 0 && (
@@ -698,7 +658,7 @@ export default function EditPOPage({ params }: { params: Promise<{ id: string }>
                                         <input type="file" accept=".csv,text/csv" className="hidden" onChange={handleImportCsv} />
                                     </label>
                                 </div>
-                                <span className="text-xs text-slate-500">ระบบจะเขียนรายการสุดท้ายเป็น {PROCESSING_FEE_LABEL} อัตโนมัติเมื่อมีค่า</span>
+                                
                             </div>
                         </div>
                     </div>
@@ -709,10 +669,22 @@ export default function EditPOPage({ params }: { params: Promise<{ id: string }>
                                 <span>รวมราคาก่อนค่าดำเนินการ</span>
                                 <span className="font-medium text-slate-900">฿ {itemsTotalBeforeFee.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
                             </div>
-                            <div className="flex justify-between text-sm text-slate-600">
-                                <span>{PROCESSING_FEE_LABEL}</span>
-                                <span className="font-medium text-slate-900">฿ {normalizedProcessingFee.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
-                            </div>
+                            {po?.poType !== 'extra' && (
+                                <div className="flex justify-between text-sm text-slate-600 items-center">
+                                    <span>{PROCESSING_FEE_LABEL}</span>
+                                    <div className="flex items-center gap-2">
+                                        <input
+                                            type="number"
+                                            min="0"
+                                            value={processingFee}
+                                            onChange={(e) => setProcessingFee(Number(e.target.value))}
+                                            className="w-24 text-sm text-right border border-slate-300 rounded py-1 px-2 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 bg-white"
+                                            placeholder="0.00"
+                                        />
+                                        <span className="font-medium text-slate-900 w-24 text-right">฿ {normalizedProcessingFee.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                                    </div>
+                                </div>
+                            )}
                             <div className="flex justify-between text-sm text-slate-600">
                                 <span>ยอดรวมก่อนภาษี</span>
                                 <span className="font-medium text-slate-900">฿ {subTotal.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>

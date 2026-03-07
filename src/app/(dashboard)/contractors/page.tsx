@@ -149,19 +149,23 @@ export default function ContractorsPage() {
         });
     };
 
+    const formatCsvText = (val: string | undefined | null) => {
+        if (!val) return "";
+        return `\t${val}`; // Prefix with tab to force Excel to treat it as text and keep leading zero
+    };
+
     const handleExportCsv = () => {
         const rows = contractors
             .slice()
             .sort((a, b) => (a.idContractor || "").localeCompare(b.idContractor || "", "th"))
             .map((item) => ([
-                item.id,
                 item.idContractor,
                 item.nickname,
                 item.fullName,
-                item.bankAccount,
+                formatCsvText(item.bankAccount),
                 item.bankCode,
-                item.nationalId,
-                item.phone,
+                formatCsvText(item.nationalId),
+                formatCsvText(item.phone),
                 item.address,
                 item.yearlyLimit,
                 item.isActive,
@@ -170,7 +174,7 @@ export default function ContractorsPage() {
         const date = new Date().toISOString().slice(0, 10);
         downloadCsv(
             `contractors_${date}.csv`,
-            ["doc_id", "id_contractor", "nickname", "full_name", "bank_account", "bank_code", "national_id", "phone", "address", "yearly_limit", "is_active"],
+            ["รหัสผู้รับเหมา", "ชื่อเล่น", "ชื่อ-นามสกุล", "เลขบัญชีธนาคาร", "รหัสธนาคาร", "เลขบัตรประชาชน", "เบอร์โทรศัพท์", "ที่อยู่", "วงเงินต่อปี", "สถานะ"],
             rows
         );
     };
@@ -192,27 +196,24 @@ export default function ContractorsPage() {
             const dataRows = rows.slice(1);
             const findIndex = (candidates: string[]) => headers.findIndex((header) => candidates.some((candidate) => header.includes(candidate)));
 
-            const docIdIndex = findIndex(["docid", "documentid"]);
-            const idIndex = findIndex(["idcontractor"]);
-            const nicknameIndex = findIndex(["nickname"]);
-            const fullNameIndex = findIndex(["fullname", "name"]);
-            const bankAccountIndex = findIndex(["bankaccount"]);
-            const bankCodeIndex = findIndex(["bankcode"]);
-            const nationalIdIndex = findIndex(["nationalid", "idcard"]);
-            const phoneIndex = findIndex(["phone"]);
-            const addressIndex = findIndex(["address"]);
-            const yearlyLimitIndex = findIndex(["yearlylimit", "limit"]);
-            const activeIndex = findIndex(["isactive", "active", "status"]);
+            const idIndex = findIndex(["idcontractor", "รหัสผู้รับเหมา"]);
+            const nicknameIndex = findIndex(["nickname", "ชื่อเล่น"]);
+            const fullNameIndex = findIndex(["fullname", "name", "ชื่อนามสกุล", "ชื่อ"]);
+            const bankAccountIndex = findIndex(["bankaccount", "เลขบัญชีธนาคาร", "เลขบัญชี"]);
+            const bankCodeIndex = findIndex(["bankcode", "รหัสธนาคาร"]);
+            const nationalIdIndex = findIndex(["nationalid", "idcard", "เลขบัตรประชาชน"]);
+            const phoneIndex = findIndex(["phone", "เบอร์โทรศัพท์", "เบอร์โทร"]);
+            const addressIndex = findIndex(["address", "ที่อยู่"]);
+            const yearlyLimitIndex = findIndex(["yearlylimit", "limit", "วงเงินต่อปี", "วงเงิน"]);
+            const activeIndex = findIndex(["isactive", "active", "status", "สถานะ"]);
 
             if (fullNameIndex < 0) {
                 alert("CSV must include full name column (for example: full_name)");
                 return;
             }
 
-            const existingByDocId = new Map<string, Contractor>();
             const existingById = new Map<string, Contractor>();
             for (const item of contractors) {
-                if (item.id) existingByDocId.set(item.id, item);
                 existingById.set((item.idContractor || "").trim().toLowerCase(), item);
             }
 
@@ -237,13 +238,10 @@ export default function ContractorsPage() {
                     continue;
                 }
 
-                const rawDocId = docIdIndex >= 0 ? (row[docIdIndex] || "").trim() : "";
                 const rawIdContractor = idIndex >= 0 ? (row[idIndex] || "").trim() : "";
                 const idContractor = rawIdContractor || nextCtId();
 
-                const existing =
-                    (rawDocId ? existingByDocId.get(rawDocId) : undefined) ||
-                    existingById.get(idContractor.toLowerCase());
+                const existing = existingById.get(idContractor.toLowerCase());
 
                 const payload = {
                     idContractor,

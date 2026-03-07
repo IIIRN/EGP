@@ -2,6 +2,8 @@ export interface Vendor {
     id: string;
     name: string;
     taxId?: string;
+    isVatRegistered?: boolean;
+    vatMode?: "none" | "exclusive" | "inclusive";
     contactName: string;
     phone: string;
     email?: string;

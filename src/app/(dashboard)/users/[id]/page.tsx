@@ -197,7 +197,7 @@ export default function EditUserPage({ params }: { params: Promise<{ id: string 
                                 {userToEdit.email}
                             </span>
                             <div className="text-xs text-slate-500 mt-1 flex flex-col gap-1">
-                                <span>UUID: <span className="text-slate-400 font-mono">{userToEdit.uid}</span></span>
+                                <span>LINE User ID: <span className="text-slate-400 font-mono">{userToEdit.lineUserId || "-"}</span></span>
                                 {userToEdit.lineUserId ? (
                                     <span className="text-green-600 font-medium">✨ เชื่อมต่อ LINE สำเร็จแล้ว</span>
                                 ) : (

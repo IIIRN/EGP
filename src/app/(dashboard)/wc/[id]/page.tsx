@@ -1,14 +1,15 @@
-"use client";
+﻿"use client";
 
 import { use, useEffect, useState } from "react";
 import Link from "next/link";
-import { ArrowLeft, CheckCircle, XCircle, Printer, FileText, Loader2, Edit } from "lucide-react";
-import { doc, getDoc, updateDoc, serverTimestamp } from "firebase/firestore";
+import { useRouter } from "next/navigation";
+import { ArrowLeft, CheckCircle, XCircle, Printer, FileText, Loader2, Edit, Trash2 } from "lucide-react";
+import { doc, getDoc, updateDoc, serverTimestamp, deleteDoc } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { WorkContract } from "@/types/wc";
 import { useAuth } from "@/context/AuthContext";
 import { useProject } from "@/context/ProjectContext";
-import { splitProcessingFeeItem } from "@/lib/documentItems";
+import { FUEL_FEE_LABEL, PROCESSING_FEE_LABEL, splitAdditionalFeeItems } from "@/lib/documentItems";
 
 type SignatureOption = {
     id?: string;
@@ -29,12 +30,14 @@ type CompanySettings = {
 
 export default function WCDetailPage({ params }: { params: Promise<{ id: string }> }) {
     const resolvedParams = use(params);
+    const router = useRouter();
     const { userProfile } = useAuth();
     const { currentProject } = useProject();
 
     const [wc, setWc] = useState<WorkContract | null>(null);
     const [loading, setLoading] = useState(true);
     const [actionLoading, setActionLoading] = useState(false);
+    const [deleting, setDeleting] = useState(false);
 
     const [companySettings, setCompanySettings] = useState<CompanySettings>({
         name: "บริษัท พาวเวอร์เทค เอนจิเนียริ่ง จำกัด",
@@ -43,7 +46,7 @@ export default function WCDetailPage({ params }: { params: Promise<{ id: string 
         email: "Powertec.civil@gmail.com",
         logoUrl: "",
         signatureUrl: "",
-        signatures: []
+        signatures: [],
     });
 
     useEffect(() => {
@@ -75,6 +78,7 @@ export default function WCDetailPage({ params }: { params: Promise<{ id: string 
                 setLoading(false);
             }
         }
+
         fetchData();
     }, [resolvedParams.id]);
 
@@ -97,8 +101,8 @@ export default function WCDetailPage({ params }: { params: Promise<{ id: string 
                         body: JSON.stringify({
                             type: "WC",
                             data: { ...wc, status: newStatus },
-                            projectName: currentProject?.name
-                        })
+                            projectName: currentProject?.name,
+                        }),
                     });
                 } catch (e) {
                     console.error("Line notification failed:", e);
@@ -106,7 +110,6 @@ export default function WCDetailPage({ params }: { params: Promise<{ id: string 
             }
 
             setWc({ ...wc, status: newStatus });
-
         } catch (error) {
             console.error("Error updating WC status:", error);
             alert("ไม่สามารถอัปเดตสถานะได้");
@@ -115,10 +118,27 @@ export default function WCDetailPage({ params }: { params: Promise<{ id: string 
         }
     };
 
+    const handleDelete = async () => {
+        if (!wc || !resolvedParams.id) return;
+        if (!window.confirm(`คุณแน่ใจหรือไม่ว่าต้องการลบใบจ้างงาน \"${wc.wcNumber}\"?\nการกระทำนี้ลบถาวรและไม่สามารถกู้คืนได้`)) {
+            return;
+        }
+
+        setDeleting(true);
+        try {
+            await deleteDoc(doc(db, "work_contracts", resolvedParams.id));
+            router.push("/wc");
+        } catch (error) {
+            console.error("Error deleting WC:", error);
+            alert("ลบข้อมูลไม่สำเร็จ");
+            setDeleting(false);
+        }
+    };
+
     const formatDate = (dateStr?: string) => {
         if (!dateStr) return "-";
         try {
-            return new Date(dateStr).toLocaleDateString('th-TH', { year: 'numeric', month: 'long', day: 'numeric' });
+            return new Date(dateStr).toLocaleDateString("th-TH", { year: "numeric", month: "long", day: "numeric" });
         } catch {
             return dateStr;
         }
@@ -173,20 +193,20 @@ export default function WCDetailPage({ params }: { params: Promise<{ id: string 
 
     const isPending = wc.status === "pending";
     const canApprove = userProfile?.role === "admin" || userProfile?.role === "pm";
-    const { items: displayItems, processingFee } = splitProcessingFeeItem(wc.items);
+    const { items: displayItems, processingFee, fuelFee } = splitAdditionalFeeItems(wc.items);
     const itemsTotalBeforeFee = displayItems.reduce((sum, item) => sum + (item.amount || 0), 0);
+    const minDisplayRows = 10;
+    const emptyRowCount = Math.max(0, minDisplayRows - displayItems.length);
 
     return (
         <div className="max-w-4xl mx-auto space-y-6 print:space-y-0 print:m-0 print:w-full print:max-w-none">
-
-            {/* Header Actions */}
             <div className="flex flex-col gap-4 md:flex-row md:items-center justify-between print:hidden">
                 <div className="flex items-center space-x-4">
                     <Link href="/wc" className="p-2 text-slate-400 hover:bg-slate-100 hover:text-slate-600 rounded-full transition-colors shrink-0">
                         <ArrowLeft size={20} />
                     </Link>
                     <div>
-                        <h1 className="text-xl md:text-2xl font-bold text-slate-900">รายละเอียดใบจ้างงาน</h1>
+                        <h1 className="text-lg md:text-xl font-bold text-slate-900">รายละเอียดใบจ้างงาน</h1>
                         <p className="text-sm text-slate-500 mt-1">
                             {wc.wcNumber} • โครงการ: {currentProject?.name}
                         </p>
@@ -203,13 +223,23 @@ export default function WCDetailPage({ params }: { params: Promise<{ id: string 
                     </button>
 
                     {(wc.status === "draft" || wc.status === "rejected") && (
-                        <Link
-                            href={`/wc/${wc.id}/edit`}
-                            className="inline-flex items-center justify-center rounded-lg bg-emerald-50 text-emerald-600 border border-emerald-200 px-4 py-2 text-sm font-semibold shadow-sm hover:bg-emerald-100 transition-colors"
-                        >
-                            <Edit size={16} className="mr-2" />
-                            แก้ไขใบจ้างงาน
-                        </Link>
+                        <>
+                            <Link
+                                href={`/wc/${wc.id}/edit`}
+                                className="inline-flex items-center justify-center rounded-lg bg-emerald-50 text-emerald-600 border border-emerald-200 px-4 py-2 text-sm font-semibold shadow-sm hover:bg-emerald-100 transition-colors"
+                            >
+                                <Edit size={16} className="mr-2" />
+                                แก้ไขใบจ้างงาน
+                            </Link>
+                            <button
+                                onClick={handleDelete}
+                                disabled={deleting}
+                                className="inline-flex items-center justify-center rounded-lg bg-white text-red-600 border border-red-200 px-4 py-2 text-sm font-semibold shadow-sm hover:bg-red-50 transition-colors disabled:opacity-50"
+                            >
+                                {deleting ? <Loader2 size={16} className="mr-2 animate-spin" /> : <Trash2 size={16} className="mr-2" />}
+                                ลบ
+                            </button>
+                        </>
                     )}
 
                     {isPending && canApprove && (
@@ -235,13 +265,9 @@ export default function WCDetailPage({ params }: { params: Promise<{ id: string 
                 </div>
             </div>
 
-            {/* Document Content */}
             <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-x-auto print:overflow-visible print:shadow-none print:border-0 print:rounded-none">
                 <div className="p-8 space-y-8 min-w-[800px] print:min-w-0 print:w-full print:p-0 print:text-black">
-
                     <div className="border border-black p-6 print:p-1 print:border-none relative">
-
-                        {/* Company Header */}
                         <div className="flex justify-between items-start mb-6">
                             <div className="w-[120px] h-[80px] flex items-center justify-center shrink-0 overflow-hidden text-center">
                                 {companySettings.logoUrl ? (
@@ -254,27 +280,25 @@ export default function WCDetailPage({ params }: { params: Promise<{ id: string 
                                 <h2 className="text-[20px] font-bold mb-1 leading-tight">{companySettings.name}</h2>
                                 <p className="text-[11px] leading-relaxed font-semibold">{companySettings.address}</p>
                                 <p className="text-[11px] leading-relaxed font-semibold">โทรศัพท์: <span className="font-bold">{companySettings.phone}</span></p>
-                                <p className="text-[11px] leading-relaxed font-semibold">Email : <span className="font-bold">{companySettings.email}</span></p>
+                                <p className="text-[11px] leading-relaxed font-semibold">Email: <span className="font-bold">{companySettings.email}</span></p>
                             </div>
-                            {/* Document Type Label - Right */}
                             <div className="w-[160px] shrink-0 flex items-start justify-end">
                                 <span className="text-[13px] font-bold border-2 border-black px-3 py-1.5 inline-block text-center leading-tight">
-                                    {wc.wcType === 'extra' ? 'EXTRA WORK CONTRACT' : 'WORK CONTRACT'}
+                                    {wc.wcType === "extra" ? "EXTRA WORK CONTRACT" : "WORK CONTRACT"}
                                     <br />
                                     <span className="text-[10px] font-semibold">
-                                        {wc.wcType === 'extra' ? 'ใบจ้างงานเพิ่มเติม' : 'ใบจ้างงาน'}
+                                        {wc.wcType === "extra" ? "ใบจ้างงานเพิ่มเติม" : "ใบจ้างงาน"}
                                     </span>
                                 </span>
                             </div>
                         </div>
 
-                        {/* To / Info Section */}
                         <div className="grid grid-cols-12 gap-x-2 gap-y-2 mb-4 text-[12px] font-medium items-center border-b border-black pb-4">
                             <div className="col-span-1">เรียน</div>
                             <div className="col-span-8 border-b-2 border-black h-5 mr-10 leading-none">{wc.vendorName}</div>
                             <div className="col-span-1 text-right">วันที่</div>
                             <div className="col-span-2 text-right border-b-2 border-black h-5 leading-none">
-                                {formatCreatedAt(wc.createdAt)}
+                                {wc.issueDate ? formatDate(wc.issueDate) : formatCreatedAt(wc.createdAt)}
                             </div>
 
                             <div className="col-span-1">เรื่อง</div>
@@ -285,17 +309,15 @@ export default function WCDetailPage({ params }: { params: Promise<{ id: string 
                             <div className="col-span-2 text-right border-b-2 border-black h-5 leading-none">{wc.wcNumber}</div>
                         </div>
 
-                        {/* Title Bar */}
                         <div className="flex justify-between items-center mb-4 border-b border-black pb-4">
                             <div className="text-left font-bold text-[14px]">
-                                {wc.wcType === 'extra' ? 'EXTRA WORK CONTRACT' : 'WORK CONTRACT'}
+                                {wc.wcType === "extra" ? "EXTRA WORK CONTRACT" : "WORK CONTRACT"}
                             </div>
                             <div className="text-right font-bold text-[12px]">
                                 {companySettings.name} มีความยินดีที่จะว่าจ้างงาน ตามรายการดังต่อไปนี้
                             </div>
                         </div>
 
-                        {/* Items Table */}
                         <table className="w-full border-collapse border border-black text-[11px] font-medium font-sans mt-2">
                             <thead>
                                 <tr>
@@ -327,6 +349,7 @@ export default function WCDetailPage({ params }: { params: Promise<{ id: string 
                                         </td>
                                     </tr>
                                 ))}
+
                                 <tr>
                                     <td className="border-x border-black py-1.5 px-1 text-center font-bold">{displayItems.length + 1}</td>
                                     <td className="border-x border-black py-1.5 px-2 font-bold">ราคารวม</td>
@@ -338,27 +361,39 @@ export default function WCDetailPage({ params }: { params: Promise<{ id: string 
                                 </tr>
                                 <tr>
                                     <td className="border-x border-black py-1.5 px-1 text-center font-bold">{displayItems.length + 2}</td>
-                                    <td className="border-x border-black py-1.5 px-2 font-bold">ค่าดำเนินการ</td>
+                                    <td className="border-x border-black py-1.5 px-2 font-bold">{PROCESSING_FEE_LABEL}</td>
                                     <td className="border-x border-black py-1.5 px-1 text-center"></td>
                                     <td className="border-x border-black py-1.5 px-1 text-center"></td>
                                     <td className="border-x border-black py-1.5 px-1 text-right"></td>
                                     <td className="border-x border-black py-1.5 px-1 text-right"></td>
                                     <td className="border-x border-black py-1.5 px-2 text-right font-bold">{processingFee.toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
                                 </tr>
-                                {/* Padding row */}
                                 <tr>
-                                    <td className="border-x border-black h-[100px]"></td>
-                                    <td className="border-x border-black h-[100px]"></td>
-                                    <td className="border-x border-black h-[100px]"></td>
-                                    <td className="border-x border-black h-[100px]"></td>
-                                    <td className="border-x border-black h-[100px] border-b-2"></td>
-                                    <td className="border-x border-black h-[100px] border-b-2"></td>
-                                    <td className="border-x border-black h-[100px]"></td>
+                                    <td className="border-x border-black py-1.5 px-1 text-center font-bold">{displayItems.length + 3}</td>
+                                    <td className="border-x border-black py-1.5 px-2 font-bold">{FUEL_FEE_LABEL}</td>
+                                    <td className="border-x border-black py-1.5 px-1 text-center"></td>
+                                    <td className="border-x border-black py-1.5 px-1 text-center"></td>
+                                    <td className="border-x border-black py-1.5 px-1 text-right"></td>
+                                    <td className="border-x border-black py-1.5 px-1 text-right"></td>
+                                    <td className="border-x border-black py-1.5 px-2 text-right font-bold">{fuelFee.toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
                                 </tr>
-                                {/* Payment Terms row */}
+                                {Array.from({ length: emptyRowCount }).map((_, index) => (
+                                    <tr key={`empty-row-${index}`} className="align-top h-8">
+                                        <td className="border-x border-black py-1.5 px-1 text-center"></td>
+                                        <td className="border-x border-black py-1.5 px-2"></td>
+                                        <td className="border-x border-black py-1.5 px-1 text-center"></td>
+                                        <td className="border-x border-black py-1.5 px-1 text-center"></td>
+                                        <td className="border-x border-black py-1.5 px-1 text-right"></td>
+                                        <td className="border-x border-black py-1.5 px-1 text-right"></td>
+                                        <td className="border-x border-black py-1.5 px-2 text-right"></td>
+                                    </tr>
+                                ))}
+
                                 <tr>
-                                    <td colSpan={4} className="border-x border-t border-black py-1 px-2 font-bold text-xs align-bottom uppercase">
-                                        {wc.paymentTerms ? `เงื่อนไข: ${wc.paymentTerms}` : `ระยะเวลาดำเนินงาน: ${formatDate(wc.startDate)} – ${formatDate(wc.endDate)}`}
+                                    <td colSpan={4} className="border-x border-t border-black py-1 px-2 font-bold text-xs align-bottom">
+                                        {wc.paymentTerms
+                                            ? `เงื่อนไข: ${wc.paymentTerms}`
+                                            : `ระยะเวลาดำเนินงาน: ${formatDate(wc.startDate)} - ${formatDate(wc.endDate)}`}
                                     </td>
                                     <td colSpan={2} className="border border-black py-1.5 px-2 text-center font-bold">Total Not Included Vat</td>
                                     <td className="border border-black py-1.5 px-2 text-right">{wc.subTotal?.toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
@@ -366,7 +401,7 @@ export default function WCDetailPage({ params }: { params: Promise<{ id: string 
                             </tbody>
                             <tfoot>
                                 <tr>
-                                    <td className="border-x border-b-transparent p-0 align-top" colSpan={4} rowSpan={1}></td>
+                                    <td className="border-x border-b-transparent p-0 align-top" colSpan={4}></td>
                                     <td colSpan={2} className="border border-black py-1.5 px-2 text-center font-bold">Vat {wc.vatRate}%</td>
                                     <td className="border border-black py-1.5 px-2 text-right">{wc.vatAmount?.toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
                                 </tr>
@@ -380,7 +415,6 @@ export default function WCDetailPage({ params }: { params: Promise<{ id: string 
                             </tfoot>
                         </table>
 
-                        {/* Signatures */}
                         <div className="grid grid-cols-1 md:grid-cols-2 print:grid-cols-2 text-[11px] font-semibold mt-12 print:mt-14 gap-8">
                             <div className="text-center space-y-2">
                                 <div className="h-12 w-56 border-b border-black mx-auto"></div>
@@ -430,11 +464,9 @@ export default function WCDetailPage({ params }: { params: Promise<{ id: string 
                                 )}
                             </div>
                         </div>
-
                     </div>
                 </div>
             </div>
-
         </div>
     );
 }

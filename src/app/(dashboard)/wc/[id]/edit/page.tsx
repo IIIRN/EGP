@@ -10,7 +10,7 @@ import { doc, getDoc, updateDoc, serverTimestamp, query, collection, where, getD
 import { db } from "@/lib/firebase";
 import { useRouter } from "next/navigation";
 import { Contractor } from "@/types/contractor";
-import { parseDocumentItemsCsv, PROCESSING_FEE_LABEL, splitProcessingFeeItem } from "@/lib/documentItems";
+import { parseDocumentItemsCsv, PROCESSING_FEE_LABEL, FUEL_FEE_LABEL, splitAdditionalFeeItems } from "@/lib/documentItems";
 
 type SignatureOption = {
     id: string;
@@ -22,6 +22,9 @@ type SignatureOption = {
 type CompanySettings = {
     signatures?: SignatureOption[];
 };
+
+type VatMode = "none" | "exclusive" | "inclusive";
+const DEFAULT_VAT_RATE = 7;
 
 export default function EditWCPage({ params }: { params: Promise<{ id: string }> }) {
     const resolvedParams = use(params);
@@ -44,15 +47,24 @@ export default function EditWCPage({ params }: { params: Promise<{ id: string }>
 
     const [items, setItems] = useState<Partial<WCItem>[]>([createEmptyItem("1")]);
     const [processingFee, setProcessingFee] = useState(0);
+    const [fuelFee, setFuelFee] = useState(0);
+    const [isAllPricesClosed, setIsAllPricesClosed] = useState(false);
     const [vendorId, setVendorId] = useState("");
     const [vendors, setVendors] = useState<Contractor[]>([]);
-    const [vatRate, setVatRate] = useState(7);
+    const [vatMode, setVatMode] = useState<VatMode>("exclusive");
     const [saving, setSaving] = useState(false);
     const [success, setSuccess] = useState(false);
     const [wcNumber, setWcNumber] = useState("");
     const [title, setTitle] = useState("");
     const [startDate, setStartDate] = useState("");
     const [endDate, setEndDate] = useState("");
+    const [issueDate, setIssueDate] = useState(() => {
+        const now = new Date();
+        const yyyy = now.getFullYear();
+        const mm = String(now.getMonth() + 1).padStart(2, "0");
+        const dd = String(now.getDate()).padStart(2, "0");
+        return `${yyyy}-${mm}-${dd}`;
+    });
     const [paymentTerms, setPaymentTerms] = useState("");
     const [notes, setNotes] = useState("");
 
@@ -92,20 +104,27 @@ export default function EditWCPage({ params }: { params: Promise<{ id: string }>
 
                     setWc(data);
                     setVendorId(data.vendorId || "");
-                    setVatRate(data.vatRate || 7);
+                    if (data.vatMode) {
+                        setVatMode(data.vatMode);
+                    } else {
+                        setVatMode((data.vatRate || 0) > 0 ? "exclusive" : "none");
+                    }
                     setWcNumber(data.wcNumber || "");
                     setTitle(data.title || "");
                     setStartDate(data.startDate || "");
                     setEndDate(data.endDate || "");
+                    setIssueDate(data.issueDate || new Date().toISOString().slice(0, 10));
                     setPaymentTerms(data.paymentTerms || "");
                     setNotes(data.notes || "");
 
                     if (data.signatureId) setSelectedSignatureId(data.signatureId);
                     if (data.items && data.items.length > 0) {
-                        const { items: baseItems, processingFee: fee } = splitProcessingFeeItem(data.items);
+                        const { items: baseItems, processingFee: fee, fuelFee: fuel } = splitAdditionalFeeItems(data.items);
                         const normalizedItems = baseItems.map((item) => ({ ...item, isClosed: Boolean(item.isClosed) }));
                         setItems(normalizedItems.length > 0 ? normalizedItems : [createEmptyItem("1")]);
                         setProcessingFee(fee);
+                        setFuelFee(fuel);
+                        setIsAllPricesClosed(normalizedItems.length > 0 ? normalizedItems.every((item) => Boolean(item.isClosed)) : false);
                     }
                 } else {
                     alert("ไม่พบข้อมูลใบจ้างงาน");
@@ -160,12 +179,6 @@ export default function EditWCPage({ params }: { params: Promise<{ id: string }>
         setItems(items.filter(item => item.id !== id));
     };
 
-    const toggleItemClosed = (id: string) => {
-        setItems(items.map((item) => (
-            item.id === id ? { ...item, isClosed: !item.isClosed } : item
-        )));
-    };
-
     const handleImportCsv = (event: React.ChangeEvent<HTMLInputElement>) => {
         const file = event.target.files?.[0];
         if (!file) return;
@@ -212,10 +225,18 @@ export default function EditWCPage({ params }: { params: Promise<{ id: string }>
     };
 
     const normalizedProcessingFee = Math.max(0, Number(processingFee) || 0);
+    const normalizedFuelFee = Math.max(0, Number(fuelFee) || 0);
     const itemsTotalBeforeFee = items.reduce((sum, item) => sum + (item.amount || 0), 0);
-    const subTotal = itemsTotalBeforeFee + normalizedProcessingFee;
-    const vatAmount = (subTotal * vatRate) / 100;
-    const totalAmount = subTotal + vatAmount;
+    const extraFeeTotal = normalizedProcessingFee + normalizedFuelFee;
+    const amountBeforeVat = itemsTotalBeforeFee + extraFeeTotal;
+    const vatRate = vatMode === "none" ? 0 : DEFAULT_VAT_RATE;
+    const vatAmount = vatMode === "exclusive"
+        ? (amountBeforeVat * DEFAULT_VAT_RATE) / 100
+        : vatMode === "inclusive"
+            ? (amountBeforeVat * DEFAULT_VAT_RATE) / (100 + DEFAULT_VAT_RATE)
+            : 0;
+    const subTotal = vatMode === "inclusive" ? amountBeforeVat - vatAmount : amountBeforeVat;
+    const totalAmount = vatMode === "exclusive" ? amountBeforeVat + vatAmount : amountBeforeVat;
 
     const handleUpdateWC = async (status: "draft" | "pending") => {
         if (!currentProject) { alert("ไม่พบข้อมูลโครงการ"); return; }
@@ -234,7 +255,7 @@ export default function EditWCPage({ params }: { params: Promise<{ id: string }>
                 unit: item.unit || "",
                 unitPrice: Number(item.unitPrice) || 0,
                 amount: Number(item.amount) || 0,
-                isClosed: Boolean(item.isClosed),
+                isClosed: Boolean(isAllPricesClosed),
             }));
 
             if (normalizedProcessingFee > 0) {
@@ -245,6 +266,18 @@ export default function EditWCPage({ params }: { params: Promise<{ id: string }>
                     unit: "",
                     unitPrice: normalizedProcessingFee,
                     amount: normalizedProcessingFee,
+                    isClosed: false,
+                });
+            }
+
+            if (normalizedFuelFee > 0) {
+                sanitizedItems.push({
+                    id: `fuel-${Date.now()}`,
+                    description: FUEL_FEE_LABEL,
+                    quantity: 0,
+                    unit: "",
+                    unitPrice: normalizedFuelFee,
+                    amount: normalizedFuelFee,
                     isClosed: false,
                 });
             }
@@ -262,11 +295,13 @@ export default function EditWCPage({ params }: { params: Promise<{ id: string }>
                 items: sanitizedItems,
                 subTotal,
                 vatRate,
+                vatMode,
                 vatAmount,
                 totalAmount,
                 status: status,
                 startDate: startDate || "",
                 endDate: endDate || "",
+                issueDate: issueDate || "",
                 paymentTerms: paymentTerms.trim(),
                 notes: notes.trim(),
                 signatureId: selectedSignatureId,
@@ -276,6 +311,28 @@ export default function EditWCPage({ params }: { params: Promise<{ id: string }>
 
             const wcRef = doc(db, "work_contracts", resolvedParams.id);
             await updateDoc(wcRef, updatedWC);
+            if (status === "pending") {
+                try {
+                    await fetch("/api/line/notify", {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({
+                            type: "WC",
+                            data: { ...updatedWC, id: resolvedParams.id },
+                            vendorData: selectedVendor
+                                ? {
+                                    name: selectedVendor.fullName,
+                                    phone: selectedVendor.phone,
+                                    address: selectedVendor.address,
+                                }
+                                : null,
+                            projectName: currentProject?.name,
+                        }),
+                    });
+                } catch (e) {
+                    console.error("Line notification failed:", e);
+                }
+            }
 
             setSuccess(true);
             setTimeout(() => {
@@ -328,10 +385,10 @@ export default function EditWCPage({ params }: { params: Promise<{ id: string }>
                     <button
                         onClick={() => handleUpdateWC("pending")}
                         disabled={saving || success}
-                        className="inline-flex items-center justify-center rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-emerald-500 disabled:opacity-50 transition-colors"
+                        className="inline-flex items-center justify-center rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-blue-500 disabled:opacity-50 transition-colors"
                     >
                         {saving ? <Loader2 size={16} className="mr-2 animate-spin" /> : <Send size={16} className="mr-2" />}
-                        {success ? "สำเร็จ!" : "ส่งขออนุมัติอีกครั้ง"}
+                        {success ? "สำเร็จ!" : "ส่งขออนุมัติใหม่อีกครั้ง"}
                     </button>
                 </div>
             </div>
@@ -386,10 +443,13 @@ export default function EditWCPage({ params }: { params: Promise<{ id: string }>
                                     className="w-full border border-slate-300 rounded-lg py-2 px-3 text-sm text-slate-600 focus:ring-emerald-500 focus:border-emerald-500" />
                             </div>
                             <div>
-                                <label className="block text-sm font-medium text-slate-700 mb-1">เงื่อนไขการชำระเงิน</label>
-                                <input type="text" value={paymentTerms} onChange={(e) => setPaymentTerms(e.target.value)}
-                                    className="w-full border border-slate-300 rounded-lg py-2 px-3 text-sm focus:ring-emerald-500 focus:border-emerald-500 bg-white"
-                                    placeholder="เช่น งวดที่ 1 = 50%" />
+                                <label className="block text-sm font-medium text-slate-700 mb-1">วันที่ออกเอกสาร</label>
+                                <input
+                                    type="date"
+                                    value={issueDate}
+                                    onChange={(e) => setIssueDate(e.target.value)}
+                                    className="w-full border border-slate-300 rounded-lg py-2 px-3 text-sm text-slate-600 focus:ring-emerald-500 focus:border-emerald-500"
+                                />
                             </div>
                             <div>
                                 <label className="block text-sm font-medium text-slate-700 mb-1">เลือกลายเซ็น</label>
@@ -405,11 +465,26 @@ export default function EditWCPage({ params }: { params: Promise<{ id: string }>
                                 </select>
                             </div>
                         </div>
-                        <div className="md:col-span-2">
-                            <label className="block text-sm font-medium text-slate-700 mb-1">หมายเหตุ</label>
-                            <input type="text" value={notes} onChange={(e) => setNotes(e.target.value)}
+
+                        <div>
+                            <label className="block text-sm font-medium text-slate-700 mb-1">เงื่อนไขการชำระเงิน / งวดงาน</label>
+                            <input
+                                type="text"
+                                value={paymentTerms}
+                                onChange={(e) => setPaymentTerms(e.target.value)}
                                 className="w-full border border-slate-300 rounded-lg py-2 px-3 text-sm focus:ring-emerald-500 focus:border-emerald-500 bg-white"
-                                placeholder="หมายเหตุ/ข้อกำหนดพิเศษ" />
+                                placeholder="เช่น งวดที่ 1 = 50%"
+                            />
+                        </div>
+                        <div>
+                            <label className="block text-sm font-medium text-slate-700 mb-1">หมายเหตุ</label>
+                            <input
+                                type="text"
+                                value={notes}
+                                onChange={(e) => setNotes(e.target.value)}
+                                className="w-full border border-slate-300 rounded-lg py-2 px-3 text-sm focus:ring-emerald-500 focus:border-emerald-500 bg-white"
+                                placeholder="หมายเหตุ/ข้อกำหนดพิเศษ"
+                            />
                         </div>
                     </div>
 
@@ -418,7 +493,18 @@ export default function EditWCPage({ params }: { params: Promise<{ id: string }>
                     <div>
                         <div className="flex flex-col gap-2 md:flex-row md:justify-between md:items-end mb-4">
                             <h3 className="text-lg font-semibold text-slate-800">รายการงาน / ค่าแรง</h3>
-                            <p className="text-xs text-slate-500">รองรับ CSV: description, quantity, unit, unitPrice (มีหัวตารางหรือไม่มีก็ได้)</p>
+                            <div className="flex flex-col md:flex-row items-start md:items-center gap-3 md:gap-4">
+                                <label className="inline-flex items-center gap-2 text-sm text-slate-700 bg-slate-50 border border-slate-200 px-3 py-1.5 rounded-lg cursor-pointer hover:bg-slate-100 transition-colors">
+                                    <input
+                                        type="checkbox"
+                                        checked={isAllPricesClosed}
+                                        onChange={(e) => setIsAllPricesClosed(e.target.checked)}
+                                        className="h-4 w-4 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500"
+                                    />
+                                    <span className="font-semibold text-emerald-700">ปิดราคาทุกรายการ</span>
+                                </label>
+                                <p className="text-xs text-slate-500">รองรับ CSV: description, quantity, unit, unitPrice (มีหัวตารางหรือไม่มีก็ได้)</p>
+                            </div>
                         </div>
 
                         <div className="border border-slate-200 rounded-lg overflow-hidden">
@@ -431,13 +517,12 @@ export default function EditWCPage({ params }: { params: Promise<{ id: string }>
                                         <th scope="col" className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase">หน่วย</th>
                                         <th scope="col" className="px-4 py-3 text-right text-xs font-semibold text-slate-500 uppercase">ราคา/หน่วย</th>
                                         <th scope="col" className="px-4 py-3 text-right text-xs font-semibold text-slate-500 uppercase">รวมเป็นเงิน</th>
-                                        <th scope="col" className="px-4 py-3 text-center text-xs font-semibold text-slate-500 uppercase">ปิด</th>
                                         <th scope="col" className="px-4 py-3"></th>
                                     </tr>
                                 </thead>
                                 <tbody className="bg-white divide-y divide-slate-100">
                                     {items.map((item, index) => (
-                                        <tr key={item.id} className={`group ${item.isClosed ? "bg-emerald-50/30" : ""}`}>
+                                        <tr key={item.id} className={`group ${isAllPricesClosed ? "bg-emerald-50/30" : ""}`}>
                                             <td className="px-4 py-3 text-sm text-slate-400 font-medium">{index + 1}</td>
                                             <td className="px-4 py-3">
                                                 <input type="text" value={item.description}
@@ -457,20 +542,11 @@ export default function EditWCPage({ params }: { params: Promise<{ id: string }>
                                             <td className="px-4 py-3 text-right">
                                                 <input type="number" value={item.unitPrice}
                                                     onChange={(e) => handleItemChange(item.id!, 'unitPrice', Number(e.target.value))}
-                                                    disabled={Boolean(item.isClosed)}
-                                                    className={`w-24 text-sm text-right border rounded py-1 px-2 ${item.isClosed ? "border-slate-200 bg-slate-100 text-slate-500 cursor-not-allowed" : "border-slate-200 focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500"}`} />
+                                                    disabled={isAllPricesClosed}
+                                                    className={`w-24 text-sm text-right border rounded py-1 px-2 ${isAllPricesClosed ? "border-slate-200 bg-slate-100 text-slate-500 cursor-not-allowed" : "border-slate-200 focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500"}`} />
                                             </td>
                                             <td className="px-4 py-3 text-right text-sm font-medium text-slate-900">
                                                 {item.amount?.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                                            </td>
-                                            <td className="px-4 py-3 text-center">
-                                                <input
-                                                    type="checkbox"
-                                                    checked={Boolean(item.isClosed)}
-                                                    onChange={() => toggleItemClosed(item.id!)}
-                                                    title="ปิดราคา (ล็อกราคาในรายการ)"
-                                                    className="h-4 w-4 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500"
-                                                />
                                             </td>
                                             <td className="px-4 py-3 text-right">
                                                 <button onClick={() => removeItem(item.id!)}
@@ -487,7 +563,6 @@ export default function EditWCPage({ params }: { params: Promise<{ id: string }>
                                         <td className="px-4 py-3 text-right text-sm font-semibold text-slate-900">
                                             {itemsTotalBeforeFee.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                                         </td>
-                                        <td className="px-4 py-3"></td>
                                         <td className="px-4 py-3"></td>
                                     </tr>
                                     <tr className="bg-amber-50/50">
@@ -510,6 +585,26 @@ export default function EditWCPage({ params }: { params: Promise<{ id: string }>
                                             {normalizedProcessingFee.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                                         </td>
                                         <td className="px-4 py-3"></td>
+                                    </tr>
+                                    <tr className="bg-orange-50/50">
+                                        <td className="px-4 py-3 text-sm text-orange-700 font-semibold">{items.length + 3}</td>
+                                        <td className="px-4 py-3 text-sm font-semibold text-orange-900">
+                                            {FUEL_FEE_LABEL}
+                                        </td>
+                                        <td className="px-4 py-3 text-sm text-slate-500"></td>
+                                        <td className="px-4 py-3 text-sm text-slate-500"></td>
+                                        <td className="px-4 py-3 text-right">
+                                            <input
+                                                type="number"
+                                                min="0"
+                                                value={fuelFee}
+                                                onChange={(e) => setFuelFee(Number(e.target.value))}
+                                                className="w-24 text-sm text-right border border-orange-200 rounded py-1 px-2 focus:border-orange-500 focus:ring-1 focus:ring-orange-500 bg-white"
+                                            />
+                                        </td>
+                                        <td className="px-4 py-3 text-right text-sm font-semibold text-orange-900">
+                                            {normalizedFuelFee.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                        </td>
                                         <td className="px-4 py-3"></td>
                                     </tr>
                                 </tbody>
@@ -530,7 +625,7 @@ export default function EditWCPage({ params }: { params: Promise<{ id: string }>
                                         <input type="file" accept=".csv,text/csv" className="hidden" onChange={handleImportCsv} />
                                     </label>
                                 </div>
-                                <span className="text-xs text-slate-500">ระบบจะเขียนรายการสุดท้ายเป็น {PROCESSING_FEE_LABEL} อัตโนมัติเมื่อมีค่า</span>
+                                <span className="text-xs text-slate-500">ระบบจะเขียนรายการท้ายเป็น {PROCESSING_FEE_LABEL} และ {FUEL_FEE_LABEL} อัตโนมัติเมื่อมีค่า</span>
                             </div>
                         </div>
                     </div>
@@ -538,7 +633,7 @@ export default function EditWCPage({ params }: { params: Promise<{ id: string }>
                     <div className="flex justify-end pt-6">
                         <div className="w-80 space-y-3">
                             <div className="flex justify-between text-sm text-slate-600">
-                                <span>รวมราคาก่อนค่าดำเนินการ</span>
+                                <span>รวมราคาก่อนค่าเพิ่มเติม</span>
                                 <span className="font-medium text-slate-900">฿ {itemsTotalBeforeFee.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
                             </div>
                             <div className="flex justify-between text-sm text-slate-600">
@@ -546,18 +641,27 @@ export default function EditWCPage({ params }: { params: Promise<{ id: string }>
                                 <span className="font-medium text-slate-900">฿ {normalizedProcessingFee.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
                             </div>
                             <div className="flex justify-between text-sm text-slate-600">
+                                <span>{FUEL_FEE_LABEL}</span>
+                                <span className="font-medium text-slate-900">฿ {normalizedFuelFee.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+                            </div>
+                            <div className="flex justify-between text-sm text-slate-600">
                                 <span>ยอดรวมก่อนภาษี (Subtotal)</span>
                                 <span className="font-medium text-slate-900">฿ {subTotal.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
                             </div>
+                            <div className="flex justify-between text-sm text-slate-600 items-center">
+                                <span>ประเภทภาษี</span>
+                                <select
+                                    value={vatMode}
+                                    onChange={(e) => setVatMode(e.target.value as VatMode)}
+                                    className="text-sm border border-slate-300 rounded py-1 px-2 focus:ring-emerald-500 focus:border-emerald-500 bg-white"
+                                >
+                                    <option value="none">ไม่มี VAT</option>
+                                    <option value="exclusive">VAT 7% (ราคาไม่รวม VAT)</option>
+                                    <option value="inclusive">VAT 7% (ราคารวม VAT)</option>
+                                </select>
+                            </div>
                             <div className="flex justify-between text-sm text-slate-600 items-center mt-2">
-                                <div className="flex items-center gap-2">
-                                    <span>ภาษีมูลค่าเพิ่ม (VAT)</span>
-                                    <select value={vatRate} onChange={(e) => setVatRate(Number(e.target.value))}
-                                        className="text-sm border border-slate-300 rounded py-1 px-2 focus:ring-emerald-500 focus:border-emerald-500 bg-white">
-                                        <option value={7}>7%</option>
-                                        <option value={0}>ไม่มี VAT (0%)</option>
-                                    </select>
-                                </div>
+                                <span>ภาษีมูลค่าเพิ่ม (VAT {vatRate}%)</span>
                                 <span className="font-medium text-slate-900">฿ {vatAmount.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
                             </div>
                             <div className="flex justify-between text-base pt-3 border-t border-slate-200">

@@ -24,7 +24,7 @@ export default function LiffLayout({
     children: React.ReactNode;
 }) {
     return (
-        <div className={`${font.className} text-slate-900 pb-20`}>
+        <div className={`${font.className} text-slate-900 pb-4`}>
             <ProjectProvider>{children}</ProjectProvider>
         </div>
     );

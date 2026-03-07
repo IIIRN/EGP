@@ -1,6 +1,6 @@
-"use client";
+﻿"use client";
 
-import { use, useEffect, useState } from "react";
+import { use, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { ArrowLeft, CheckCircle, XCircle, Printer, FileEdit, Loader2, Edit, Trash2 } from "lucide-react";
@@ -9,6 +9,28 @@ import { db } from "@/lib/firebase";
 import { VariationOrder } from "@/types/vo";
 import { useAuth } from "@/context/AuthContext";
 import { useProject } from "@/context/ProjectContext";
+
+type SignatureOption = {
+    id?: string;
+    name?: string;
+    position?: string;
+    signatureUrl?: string;
+};
+
+type CompanySettings = {
+    name: string;
+    address: string;
+    phone: string;
+    email: string;
+    logoUrl?: string;
+    signatureUrl?: string;
+    signatures?: SignatureOption[];
+};
+
+function toSignedCurrency(value: number) {
+    const sign = value > 0 ? "+" : "";
+    return `${sign}${value.toLocaleString(undefined, { minimumFractionDigits: 2 })}`;
+}
 
 export default function VODetailPage({ params }: { params: Promise<{ id: string }> }) {
     const resolvedParams = use(params);
@@ -21,32 +43,36 @@ export default function VODetailPage({ params }: { params: Promise<{ id: string 
     const [actionLoading, setActionLoading] = useState(false);
     const [deleting, setDeleting] = useState(false);
 
-    const [companySettings, setCompanySettings] = useState({
+    const [companySettings, setCompanySettings] = useState<CompanySettings>({
         name: "บริษัท พาวเวอร์เทค เอนจิเนียริ่ง จำกัด",
         address: "9/10 ถ.มิตรสาร ต.ประตูชัย อ.พระนครศรีอยุธยา จ.พระนครศรีอยุธยา 13000",
         phone: "083-995-5629, 083-995-4495",
         email: "Powertec.civil@gmail.com",
         logoUrl: "",
         signatureUrl: "",
-        signatures: [] as any[]
+        signatures: [],
     });
 
     useEffect(() => {
         async function fetchSettingsAndVO() {
             if (!resolvedParams.id) return;
             try {
-                // Fetch Settings
                 const configRef = doc(db, "system_settings", "global_config");
                 const configSnap = await getDoc(configRef);
                 if (configSnap.exists() && configSnap.data().companySettings) {
-                    setCompanySettings(configSnap.data().companySettings);
+                    const settings = configSnap.data().companySettings as Partial<CompanySettings>;
+                    setCompanySettings((prev) => ({
+                        ...prev,
+                        ...settings,
+                        signatures: Array.isArray(settings.signatures) ? settings.signatures : prev.signatures,
+                    }));
                 }
 
-                const docRef = doc(db, "variation_orders", resolvedParams.id);
-                const docSnap = await getDoc(docRef);
+                const voRef = doc(db, "variation_orders", resolvedParams.id);
+                const voSnap = await getDoc(voRef);
 
-                if (docSnap.exists()) {
-                    setVo({ id: docSnap.id, ...docSnap.data() } as VariationOrder);
+                if (voSnap.exists()) {
+                    setVo({ id: voSnap.id, ...voSnap.data() } as VariationOrder);
                 } else {
                     console.error("No such document!");
                 }
@@ -56,6 +82,7 @@ export default function VODetailPage({ params }: { params: Promise<{ id: string 
                 setLoading(false);
             }
         }
+
         fetchSettingsAndVO();
     }, [resolvedParams.id]);
 
@@ -70,12 +97,7 @@ export default function VODetailPage({ params }: { params: Promise<{ id: string 
                 updatedAt: serverTimestamp(),
             });
 
-            // If approved, update Project Budget dynamically
             if (newStatus === "approved" && currentProject) {
-                // Here you would theoretically update the project's total budget via cloud function or direct update
-                // For now, we only update the document state
-
-                // Trigger LINE Notification
                 try {
                     await fetch("/api/line/notify", {
                         method: "POST",
@@ -83,8 +105,8 @@ export default function VODetailPage({ params }: { params: Promise<{ id: string 
                         body: JSON.stringify({
                             type: "VO",
                             data: { ...vo, status: newStatus },
-                            projectName: currentProject.name
-                        })
+                            projectName: currentProject.name,
+                        }),
                     });
                 } catch (e) {
                     console.error("Line notification failed:", e);
@@ -92,7 +114,6 @@ export default function VODetailPage({ params }: { params: Promise<{ id: string 
             }
 
             setVo({ ...vo, status: newStatus });
-
         } catch (error) {
             console.error("Error updating VO status:", error);
             alert("ไม่สามารถอัปเดตสถานะได้");
@@ -103,7 +124,9 @@ export default function VODetailPage({ params }: { params: Promise<{ id: string 
 
     const handleDelete = async () => {
         if (!vo || !resolvedParams.id) return;
-        if (!window.confirm(`คุณแน่ใจหรือไม่ว่าต้องการลบใบสั่งเปลี่ยนงาน "${vo.voNumber}"?\nการกระทำนี้ลบถาวรและไม่สามารถกู้คืนได้`)) return;
+        if (!window.confirm(`คุณแน่ใจหรือไม่ว่าต้องการลบใบสั่งเปลี่ยนงาน \"${vo.voNumber}\"?\nการกระทำนี้ลบถาวรและไม่สามารถกู้คืนได้`)) {
+            return;
+        }
 
         setDeleting(true);
         try {
@@ -115,6 +138,51 @@ export default function VODetailPage({ params }: { params: Promise<{ id: string 
             setDeleting(false);
         }
     };
+
+    const formatCreatedAt = (value: unknown) => {
+        try {
+            if (value && typeof value === "object" && "toDate" in value) {
+                const timestamp = value as { toDate?: () => Date };
+                if (typeof timestamp.toDate === "function") {
+                    return timestamp.toDate().toLocaleDateString("th-TH");
+                }
+            }
+            if (value && typeof value === "object" && "seconds" in value) {
+                const unixTimestamp = value as { seconds?: number; nanoseconds?: number };
+                if (typeof unixTimestamp.seconds === "number") {
+                    const millis = (unixTimestamp.seconds * 1000) + Math.floor((unixTimestamp.nanoseconds ?? 0) / 1_000_000);
+                    return new Date(millis).toLocaleDateString("th-TH");
+                }
+            }
+            if (typeof value === "string" || typeof value === "number" || value instanceof Date) {
+                const date = new Date(value);
+                if (!Number.isNaN(date.getTime())) {
+                    return date.toLocaleDateString("th-TH");
+                }
+            }
+        } catch {
+            // ignore malformed values and use fallback
+        }
+        return "N/A";
+    };
+
+    const canApprove = userProfile?.role === "admin" || userProfile?.role === "pm";
+
+    const primarySignature = useMemo(() => {
+        if (companySettings.signatures && companySettings.signatures.length > 0) {
+            return companySettings.signatures[0];
+        }
+
+        if (companySettings.signatureUrl) {
+            return {
+                name: "( ................................................ )",
+                position: "ผู้อนุมัติ",
+                signatureUrl: companySettings.signatureUrl,
+            } satisfies SignatureOption;
+        }
+
+        return null;
+    }, [companySettings.signatures, companySettings.signatureUrl]);
 
     if (loading) {
         return (
@@ -137,19 +205,19 @@ export default function VODetailPage({ params }: { params: Promise<{ id: string 
     }
 
     const isPending = vo.status === "pending";
-    // Usually only PM or Admin can approve variation orders
-    const canApprove = userProfile?.role === "admin" || userProfile?.role === "pm";
+    const canEdit = vo.status === "draft" || vo.status === "rejected";
+    const minDisplayRows = 10;
+    const emptyRowCount = Math.max(0, minDisplayRows - vo.items.length);
 
     return (
-        <div className="max-w-4xl mx-auto space-y-6 print:m-0 print:w-full print:max-w-none print:space-y-0">
-            {/* Header Actions */}
+        <div className="max-w-4xl mx-auto space-y-6 print:space-y-0 print:m-0 print:w-full print:max-w-none">
             <div className="flex items-center justify-between print:hidden">
                 <div className="flex items-center space-x-4">
                     <Link href="/vo" className="p-2 text-slate-400 hover:bg-slate-100 hover:text-slate-600 rounded-full transition-colors">
                         <ArrowLeft size={20} />
                     </Link>
                     <div>
-                        <h1 className="text-2xl font-bold text-slate-900">รายละเอียดงานเพิ่ม-ลด</h1>
+                        <h1 className="text-2xl font-bold text-slate-900">รายละเอียดใบสั่งเปลี่ยนงาน</h1>
                         <p className="text-sm text-slate-500 mt-1">
                             {vo.voNumber} • โครงการ: {currentProject?.name}
                         </p>
@@ -165,7 +233,7 @@ export default function VODetailPage({ params }: { params: Promise<{ id: string 
                         พิมพ์ PDF
                     </button>
 
-                    {(vo.status === "draft" || vo.status === "rejected") && (
+                    {canEdit && (
                         <Link
                             href={`/vo/${vo.id}/edit`}
                             className="inline-flex items-center justify-center rounded-lg bg-blue-50 text-blue-600 border border-blue-200 px-4 py-2 text-sm font-semibold shadow-sm hover:bg-blue-100 transition-colors"
@@ -175,7 +243,7 @@ export default function VODetailPage({ params }: { params: Promise<{ id: string 
                         </Link>
                     )}
 
-                    {(vo.status === "draft" || vo.status === "rejected") && (
+                    {canEdit && (
                         <button
                             onClick={handleDelete}
                             disabled={deleting}
@@ -202,168 +270,154 @@ export default function VODetailPage({ params }: { params: Promise<{ id: string 
                                 className="inline-flex items-center justify-center rounded-lg bg-green-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-green-500 transition-colors disabled:opacity-50"
                             >
                                 {actionLoading ? <Loader2 size={16} className="mr-2 animate-spin" /> : <CheckCircle size={16} className="mr-2" />}
-                                อนุมัติ (ส่งผลต่องบระมาณ)
+                                อนุมัติ (ส่งผลต่องบประมาณ)
                             </button>
                         </>
                     )}
                 </div>
             </div>
 
-            {/* Document Content */}
-            <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden print:shadow-none print:border-0 print:rounded-none">
-                <div className="p-8 space-y-8 print:p-0">
-
-                    {/* Header Info */}
-                    <div className="flex flex-col md:flex-row justify-between items-start border-b border-slate-200 pb-6 print:pb-4 gap-4">
-                        <div className="flex items-center gap-4">
-                            {companySettings.logoUrl ? (
-                                <img src={companySettings.logoUrl} alt="Logo" className="h-16 w-16 object-contain hidden print:block" />
-                            ) : null}
-                            <div>
-                                <h2 className="text-xl font-bold text-slate-800">VARIATION ORDER</h2>
-                                <p className="text-slate-500 text-sm mt-1">ใบสั่งเปลี่ยนแปลงงาน (งานเพิ่ม-ลด)</p>
+            <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-x-auto print:overflow-visible print:shadow-none print:border-0 print:rounded-none">
+                <div className="p-8 space-y-8 min-w-[800px] print:min-w-0 print:w-full print:p-0 print:text-black">
+                    <div className="border border-black p-6 print:p-1 print:border-none relative">
+                        <div className="flex justify-between items-start mb-6">
+                            <div className="w-[120px] h-[80px] flex items-center justify-center shrink-0 overflow-hidden text-center">
+                                {companySettings.logoUrl ? (
+                                    <img src={companySettings.logoUrl} alt="Logo" className="max-w-full max-h-full object-contain" />
+                                ) : (
+                                    <span className="text-orange-600 text-xs font-bold shrink-0">LOGO</span>
+                                )}
                             </div>
-                        </div>
-                        <div className="text-right">
-                            <h3 className="text-lg font-semibold text-orange-600">{vo.voNumber}</h3>
-                            <p className="text-sm text-slate-500 mt-1">
-                                วันที่สร้าง: {(vo.createdAt as any)?.toDate().toLocaleDateString('th-TH') || 'N/A'}
-                            </p>
-                            <div className="mt-2 print:hidden">
-                                <span className={`px-2 py-1 inline-flex text-xs leading-5 font-semibold rounded-full ${vo.status === 'approved' ? 'bg-green-100 text-green-800' :
-                                    vo.status === 'rejected' ? 'bg-red-100 text-red-800' :
-                                        vo.status === 'pending' ? 'bg-orange-100 text-orange-800' :
-                                            'bg-slate-100 text-slate-800'
-                                    }`}>
-                                    {vo.status === 'approved' ? 'อนุมัติแล้ว' :
-                                        vo.status === 'rejected' ? 'ไม่อนุมัติ' :
-                                            vo.status === 'pending' ? 'รออนุมัติ' : 'ฉบับร่าง'}
+                            <div className="flex-1 text-center px-4 font-sans">
+                                <h2 className="text-[20px] font-bold mb-1 leading-tight">{companySettings.name}</h2>
+                                <p className="text-[11px] leading-relaxed font-semibold">{companySettings.address}</p>
+                                <p className="text-[11px] leading-relaxed font-semibold">โทรศัพท์: <span className="font-bold">{companySettings.phone}</span></p>
+                                <p className="text-[11px] leading-relaxed font-semibold">Email: <span className="font-bold">{companySettings.email}</span></p>
+                            </div>
+                            <div className="w-[180px] shrink-0 flex items-start justify-end">
+                                <span className="text-[13px] font-bold border-2 border-black px-3 py-1.5 inline-block text-center leading-tight">
+                                    VARIATION ORDER
+                                    <br />
+                                    <span className="text-[10px] font-semibold">ใบสั่งเปลี่ยนแปลงงาน</span>
                                 </span>
                             </div>
                         </div>
-                    </div>
 
-                    {/* VO General Info */}
-                    <div className="grid grid-cols-1 gap-6 text-sm">
-                        <div>
-                            <h4 className="font-semibold text-slate-500 mb-1">หัวข้องานเพิ่มเติม/แก้ไข:</h4>
-                            <p className="font-medium text-slate-900 text-lg">{vo.title}</p>
-                        </div>
-                        <div>
-                            <h4 className="font-semibold text-slate-500 mb-1">สาเหตุและความจำเป็น (Reason):</h4>
-                            <p className="text-slate-700 bg-slate-50 p-4 rounded-lg border border-slate-100">
-                                {vo.reason || "ไม่ได้ระบุเหตุผล"}
-                            </p>
-                        </div>
-                    </div>
+                        <div className="grid grid-cols-12 gap-x-2 gap-y-2 mb-4 text-[12px] font-medium items-center border-b border-black pb-4">
+                            <div className="col-span-1">เรียน</div>
+                            <div className="col-span-8 border-b-2 border-black h-5 mr-10 leading-none">ผู้เกี่ยวข้องในโครงการ</div>
+                            <div className="col-span-1 text-right">วันที่</div>
+                            <div className="col-span-2 text-right border-b-2 border-black h-5 leading-none">{formatCreatedAt(vo.createdAt)}</div>
 
-                    {/* Items Table */}
-                    <div className="mt-8 border border-slate-200 rounded-lg overflow-hidden">
-                        <table className="min-w-full divide-y divide-slate-200">
-                            <thead className="bg-slate-50">
+                            <div className="col-span-1">เรื่อง</div>
+                            <div className="col-span-8 border-b-2 border-black h-5 mr-10 leading-none">{vo.title}</div>
+                            <div className="col-span-1 text-right">เลขที่</div>
+                            <div className="col-span-2 text-right border-b-2 border-black h-5 leading-none">{vo.voNumber}</div>
+                        </div>
+
+                        <div className="flex justify-between items-center mb-4 border-b border-black pb-4">
+                            <div className="text-left font-bold text-[14px]">VARIATION ORDER</div>
+                            <div className="text-right font-bold text-[12px]">
+                                เอกสารนี้เป็นใบสั่งเปลี่ยนแปลงงาน (เพิ่ม/ลด) ที่มีผลต่องบประมาณโครงการ
+                            </div>
+                        </div>
+
+                        <table className="w-full border-collapse border border-black text-[11px] font-medium font-sans mt-2">
+                            <thead>
                                 <tr>
-                                    <th scope="col" className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase">ลำดับ</th>
-                                    <th scope="col" className="px-4 py-3 text-center text-xs font-semibold text-slate-500 uppercase">ประเภท</th>
-                                    <th scope="col" className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase">รายการงานวัสดุ</th>
-                                    <th scope="col" className="px-4 py-3 text-center text-xs font-semibold text-slate-500 uppercase">จำนวน</th>
-                                    <th scope="col" className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase">หน่วย</th>
-                                    <th scope="col" className="px-4 py-3 text-right text-xs font-semibold text-slate-500 uppercase">ราคา/หน่วย</th>
-                                    <th scope="col" className="px-4 py-3 text-right text-xs font-semibold text-slate-500 uppercase">ผลกระทบ</th>
+                                    <th className="border border-black py-1.5 px-1 text-center w-10 font-bold">ลำดับ</th>
+                                    <th className="border border-black py-1.5 px-2 text-center w-20 font-bold">ประเภท</th>
+                                    <th className="border border-black py-1.5 px-2 text-center font-bold">รายละเอียดงาน/วัสดุ</th>
+                                    <th className="border border-black py-1.5 px-1 text-center w-16 font-bold">จำนวน</th>
+                                    <th className="border border-black py-1.5 px-1 text-center w-16 font-bold">หน่วย</th>
+                                    <th className="border border-black py-1.5 px-2 text-center w-28 font-bold">ราคา/หน่วย</th>
+                                    <th className="border border-black py-1.5 px-2 text-center w-28 font-bold">ผลกระทบงบ</th>
                                 </tr>
                             </thead>
-                            <tbody className="bg-white divide-y divide-slate-100">
-                                {vo.items.map((item, index) => (
-                                    <tr key={index}>
-                                        <td className="px-4 py-3 text-sm text-slate-500">{index + 1}</td>
-                                        <td className="px-4 py-3 text-center">
-                                            <span className={`px-2 py-0.5 text-xs font-semibold rounded ${item.type === 'add' ? 'bg-red-50 text-red-600' : 'bg-green-50 text-green-600'}`}>
-                                                {item.type === 'add' ? 'งานเพิ่ม' : 'งานลด'}
-                                            </span>
-                                        </td>
-                                        <td className="px-4 py-3 text-sm text-slate-900 font-medium">{item.description}</td>
-                                        <td className="px-4 py-3 text-sm text-slate-900 text-center">{item.quantity}</td>
-                                        <td className="px-4 py-3 text-sm text-slate-500">{item.unit}</td>
-                                        <td className="px-4 py-3 text-sm text-slate-900 text-right">
-                                            {item.unitPrice?.toLocaleString(undefined, { minimumFractionDigits: 2 })}
-                                        </td>
-                                        <td className={`px-4 py-3 text-sm text-right font-bold ${item.type === 'add' ? 'text-red-600' : 'text-green-600'}`}>
-                                            {item.type === 'add' ? '+' : '-'}{item.amount?.toLocaleString(undefined, { minimumFractionDigits: 2 })}
-                                        </td>
+                            <tbody>
+                                {vo.items.map((item, index) => {
+                                    const amount = Number(item.amount) || 0;
+                                    const signedAmount = item.type === "add" ? Math.abs(amount) : -Math.abs(amount);
+                                    return (
+                                        <tr key={item.id || `${index}-${item.description}`} className="align-top">
+                                            <td className="border-x border-black py-1.5 px-1 text-center">{index + 1}</td>
+                                            <td className="border-x border-black py-1.5 px-2 text-center font-bold">{item.type === "add" ? "เพิ่ม" : "ลด"}</td>
+                                            <td className="border-x border-black py-1.5 px-2">{item.description}</td>
+                                            <td className="border-x border-black py-1.5 px-1 text-center">{item.quantity}</td>
+                                            <td className="border-x border-black py-1.5 px-1 text-center">{item.unit}</td>
+                                            <td className="border-x border-black py-1.5 px-2 text-right">{(item.unitPrice || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
+                                            <td className="border-x border-black py-1.5 px-2 text-right font-bold">{toSignedCurrency(signedAmount)}</td>
+                                        </tr>
+                                    );
+                                })}
+
+                                {Array.from({ length: emptyRowCount }).map((_, index) => (
+                                    <tr key={`empty-row-${index}`} className="align-top h-8">
+                                        <td className="border-x border-black py-1.5 px-1 text-center"></td>
+                                        <td className="border-x border-black py-1.5 px-2 text-center"></td>
+                                        <td className="border-x border-black py-1.5 px-2"></td>
+                                        <td className="border-x border-black py-1.5 px-1 text-center"></td>
+                                        <td className="border-x border-black py-1.5 px-1 text-center"></td>
+                                        <td className="border-x border-black py-1.5 px-2 text-right"></td>
+                                        <td className="border-x border-black py-1.5 px-2 text-right"></td>
                                     </tr>
                                 ))}
+
+                                <tr>
+                                    <td colSpan={5} className="border-x border-t border-black py-1 px-2 font-bold text-xs align-bottom">
+                                        เหตุผล/รายละเอียดเพิ่มเติม: {vo.reason || "ไม่ระบุ"}
+                                    </td>
+                                    <td className="border border-black py-1.5 px-2 text-center font-bold">Total Not Included Vat</td>
+                                    <td className="border border-black py-1.5 px-2 text-right">{toSignedCurrency(vo.subTotal || 0)}</td>
+                                </tr>
                             </tbody>
+                            <tfoot>
+                                <tr>
+                                    <td className="border-x border-b-transparent p-0 align-top" colSpan={5}></td>
+                                    <td className="border border-black py-1.5 px-2 text-center font-bold">Vat {vo.vatRate || 0}%</td>
+                                    <td className="border border-black py-1.5 px-2 text-right">{toSignedCurrency(vo.vatAmount || 0)}</td>
+                                </tr>
+                                <tr>
+                                    <td className="border-x border-b border-black font-bold p-2 text-left h-20 text-[10px] align-top" colSpan={5}>
+                                    </td>
+                                    <td className="border border-black py-1.5 px-2 text-center font-bold">Total Included Vat</td>
+                                    <td className="border border-black py-1.5 px-2 text-right font-bold">{toSignedCurrency(vo.totalAmount || 0)}</td>
+                                </tr>
+                            </tfoot>
                         </table>
-                    </div>
 
-                    {/* Summary Totals */}
-                    <div className="flex justify-end pt-4">
-                        <div className="w-80 space-y-4 bg-slate-50 p-6 rounded-xl border border-slate-100">
-                            <div className="flex justify-between text-sm text-slate-600">
-                                <span>ยอดสุทธิก่อนภาษี (Subtotal)</span>
-                                <span className={`font-medium ${vo.subTotal > 0 ? 'text-red-600' : vo.subTotal < 0 ? 'text-green-600' : 'text-slate-900'}`}>
-                                    {vo.subTotal > 0 ? '+' : ''}฿ {vo.subTotal?.toLocaleString(undefined, { minimumFractionDigits: 2 })}
-                                </span>
+                        <div className="grid grid-cols-1 md:grid-cols-2 print:grid-cols-2 text-[11px] font-semibold mt-10 gap-8">
+                            <div className="text-center space-y-2">
+                                <div className="h-12 w-56 border-b border-black mx-auto"></div>
+                                <p>( ................................................ )</p>
+                                <p className="font-bold text-xs">ผู้เสนอขอเปลี่ยนแปลงงาน</p>
                             </div>
-                            <div className="flex justify-between text-sm text-slate-600 items-center">
-                                <span>ภาษีมูลค่าเพิ่ม (VAT {vo.vatRate}%)</span>
-                                <span className={`font-medium ${vo.vatAmount > 0 ? 'text-red-500' : vo.vatAmount < 0 ? 'text-green-500' : 'text-slate-900'}`}>
-                                    {vo.vatAmount > 0 ? '+' : ''}฿ {vo.vatAmount?.toLocaleString(undefined, { minimumFractionDigits: 2 })}
-                                </span>
-                            </div>
-                            <div className="flex justify-between text-base pt-3 border-t border-slate-200">
-                                <span className="font-bold text-slate-900 uppercase">รวมผลกระทบทั้งหมด</span>
-                                <span className={`font-bold ${vo.totalAmount > 0 ? 'text-red-600' : vo.totalAmount < 0 ? 'text-green-600' : 'text-slate-900'}`}>
-                                    {vo.totalAmount > 0 ? '+' : ''}฿ {vo.totalAmount?.toLocaleString(undefined, { minimumFractionDigits: 2 })}
-                                </span>
-                            </div>
-                        </div>
-                    </div>
 
-                    {/* Signatures */}
-                    <div className="hidden print:block mt-8 pt-8 border-t border-slate-200">
-                        <div className="grid grid-cols-1 md:grid-cols-2 print:grid-cols-2 text-[11px] font-semibold mt-4">
-                            <div></div>
-                            <div className="text-center space-y-12 w-full max-w-[400px] ml-auto">
-                                <div className="-ml-10">
-                                    {companySettings.name} หวังว่าท่านจะได้รับความไว้วางใจให้ดำเนินการ และขอ ขอบคุณมาณ โอกาสนี้<br />
-                                    <span className="font-bold">ด้วยความนับถือ</span>
-                                </div>
-                                <div className="flex justify-center gap-8 -ml-10 flex-wrap">
-                                    {companySettings.signatures && companySettings.signatures.length > 0 ? (
-                                        companySettings.signatures.map((sig) => (
-                                            <div key={sig.id} className="space-y-1 flex flex-col items-center">
-                                                {sig.signatureUrl ? (
-                                                    <div className="h-12 w-32 border-b border-black mb-1 flex items-end justify-center">
-                                                        <img src={sig.signatureUrl} alt="Signature" className="max-h-full max-w-full object-contain" />
-                                                    </div>
-                                                ) : (
-                                                    <p className="mb-2 text-slate-300 print:text-black">...........................................................</p>
-                                                )}
-                                                <p>{sig.name || "( ................................................ )"}</p>
-                                                <p className="font-bold text-xs mt-1">{sig.position || "ตำแหน่ง..............................."}</p>
+                            <div className="text-center space-y-2">
+                                {primarySignature ? (
+                                    <div className="space-y-2 flex flex-col items-center">
+                                        {primarySignature.signatureUrl ? (
+                                            <div className="h-12 w-56 border-b border-black flex items-end justify-center">
+                                                <img src={primarySignature.signatureUrl} alt="Signature" className="max-h-full max-w-full object-contain" />
                                             </div>
-                                        ))
-                                    ) : (
-                                        <div className="space-y-1 flex flex-col items-center">
-                                            {companySettings.signatureUrl ? (
-                                                <div className="h-12 w-32 border-b border-black mb-1 flex items-end justify-center">
-                                                    <img src={companySettings.signatureUrl} alt="Signature" className="max-h-full max-w-full object-contain" />
-                                                </div>
-                                            ) : (
-                                                <p className="mb-2 text-slate-300 print:text-black">...........................................................</p>
-                                            )}
-                                            <p>( นายองศิลป์ วิริยะสัญญา )</p>
-                                            <p className="font-bold text-xs mt-1">ผู้จัดการ</p>
-                                        </div>
-                                    )}
-                                </div>
+                                        ) : (
+                                            <div className="h-12 w-56 border-b border-black"></div>
+                                        )}
+                                        <p>{primarySignature.name || "( ................................................ )"}</p>
+                                        <p className="font-bold text-xs">{primarySignature.position || "ผู้อนุมัติ"}</p>
+                                    </div>
+                                ) : (
+                                    <div className="space-y-2 flex flex-col items-center">
+                                        <div className="h-12 w-56 border-b border-black"></div>
+                                        <p>( ................................................ )</p>
+                                        <p className="font-bold text-xs">ผู้อนุมัติ</p>
+                                    </div>
+                                )}
                             </div>
                         </div>
                     </div>
-
                 </div>
             </div>
-
         </div>
     );
 }

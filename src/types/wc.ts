@@ -26,11 +26,13 @@ export interface WorkContract {
     items: WCItem[];
     subTotal: number;
     vatRate: number;
+    vatMode?: "none" | "exclusive" | "inclusive";
     vatAmount: number;
     totalAmount: number;
     status: "draft" | "pending" | "approved" | "rejected";
     startDate?: string;     // วันเริ่มงาน
     endDate?: string;       // วันสิ้นสุดงาน
+    issueDate?: string;
     paymentTerms?: string;  // เงื่อนไขการจ่าย เช่น "งวดที่ 1 = 50%, งวดที่ 2 = 50%"
     notes?: string;         // หมายเหตุ/ข้อกำหนดพิเศษ
     createdBy: string;

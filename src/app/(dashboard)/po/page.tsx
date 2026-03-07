@@ -1,10 +1,10 @@
 "use client";
 
 import { useProject } from "@/context/ProjectContext";
-import { Plus, Search, FileText, ArrowRight, Eye, Trash2 } from "lucide-react";
+import { Plus, Search, FileText, Eye } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { collection, query, where, onSnapshot, orderBy, deleteDoc, doc } from "firebase/firestore";
+import { collection, query, where, onSnapshot } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { PurchaseOrder } from "@/types/po";
 
@@ -76,18 +76,6 @@ export default function POListingPage() {
             case "approved": return { label: "อนุมัติแล้ว", color: "bg-green-100 text-green-800" };
             case "rejected": return { label: "ไม่อนุมัติ", color: "bg-red-100 text-red-800" };
             default: return { label: status, color: "bg-slate-100 text-slate-800" };
-        }
-    };
-
-    const handleDelete = async (poId: string, poNumber: string) => {
-        if (!window.confirm(`คุณแน่ใจหรือไม่ว่าต้องการลบใบสั่งซื้อ ${poNumber}? ข้อมูลจะไม่สามารถกู้คืนได้`)) {
-            return;
-        }
-        try {
-            await deleteDoc(doc(db, "purchase_orders", poId));
-        } catch (error) {
-            console.error("Error deleting PO:", error);
-            alert("เกิดข้อผิดพลาดในการลบใบสั่งซื้อ");
         }
     };
 
@@ -233,13 +221,6 @@ export default function POListingPage() {
                                                     <Link href={`/po/${po.id}`} className="inline-flex text-slate-400 hover:text-blue-600 p-1.5 hover:bg-blue-50 rounded-lg transition-colors border border-transparent" title="ดูรายละเอียด">
                                                         <Eye size={18} />
                                                     </Link>
-                                                    <button
-                                                        onClick={() => handleDelete(po.id, po.poNumber)}
-                                                        className="inline-flex text-slate-400 hover:text-red-600 p-1.5 hover:bg-red-50 rounded-lg transition-colors border border-transparent"
-                                                        title="ลบเอกสาร"
-                                                    >
-                                                        <Trash2 size={18} />
-                                                    </button>
                                                 </div>
                                             </td>
                                         </tr>

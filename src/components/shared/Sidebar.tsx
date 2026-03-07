@@ -177,7 +177,7 @@ export default function Sidebar({ isOpen = false, setIsOpen }: SidebarProps) {
                                                 className={clsx(
                                                     "group flex items-center px-3 py-2.5 text-sm font-medium rounded-lg transition-colors",
                                                     isActive
-                                                        ? "bg-blue-600 text-white shadow-sm"
+                                                        ? "bg-blue-500/15 text-blue-400"
                                                         : "text-slate-300 hover:bg-slate-800 hover:text-white"
                                                 )}
                                                 onClick={handleNavigate}
@@ -185,7 +185,7 @@ export default function Sidebar({ isOpen = false, setIsOpen }: SidebarProps) {
                                                 <item.icon
                                                     className={clsx(
                                                         "mr-3 h-4 w-4 flex-shrink-0 transition-colors",
-                                                        isActive ? "text-white" : "text-slate-400 group-hover:text-slate-300"
+                                                        isActive ? "text-blue-400" : "text-slate-400 group-hover:text-slate-300"
                                                     )}
                                                     aria-hidden="true"
                                                 />
@@ -231,7 +231,7 @@ export default function Sidebar({ isOpen = false, setIsOpen }: SidebarProps) {
                                                 className={clsx(
                                                     "group flex items-center px-3 py-2.5 text-sm font-medium rounded-lg transition-colors",
                                                     isActive
-                                                        ? "bg-blue-600 text-white shadow-sm"
+                                                        ? "bg-blue-500/15 text-blue-400"
                                                         : "text-slate-300 hover:bg-slate-800 hover:text-white"
                                                 )}
                                                 onClick={handleNavigate}
@@ -239,7 +239,7 @@ export default function Sidebar({ isOpen = false, setIsOpen }: SidebarProps) {
                                                 <item.icon
                                                     className={clsx(
                                                         "mr-3 h-4 w-4 flex-shrink-0 transition-colors",
-                                                        isActive ? "text-white" : "text-slate-400 group-hover:text-slate-300"
+                                                        isActive ? "text-blue-400" : "text-slate-400 group-hover:text-slate-300"
                                                     )}
                                                     aria-hidden="true"
                                                 />

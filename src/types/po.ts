@@ -25,6 +25,7 @@ export interface PurchaseOrder {
     items: POItem[];
     subTotal: number;
     vatRate: number;
+    vatMode?: "none" | "exclusive" | "inclusive";
     vatAmount: number;
     totalAmount: number;
     status: "draft" | "pending" | "approved" | "rejected";
@@ -34,4 +35,5 @@ export interface PurchaseOrder {
     creditDays?: number;
     signatureId?: string;
     signatureData?: DocumentSignature | null;
+    isCompleted?: boolean;
 }

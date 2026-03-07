@@ -15,6 +15,7 @@ import {
     User,
     Box,
     Edit,
+    Send,
 } from "lucide-react";
 import { doc, getDoc, updateDoc, serverTimestamp } from "firebase/firestore";
 import { db } from "@/lib/firebase";
@@ -57,7 +58,7 @@ const formatMoney = (value: number | undefined) =>
 
 export default function LiffPODetailPage({ params }: { params: Promise<{ id: string }> }) {
     const resolvedParams = use(params);
-    const { userProfile } = useAuth();
+    const { user, userProfile } = useAuth();
     const { currentProject } = useProject();
 
     const [po, setPo] = useState<PurchaseOrder | null>(null);
@@ -90,7 +91,7 @@ export default function LiffPODetailPage({ params }: { params: Promise<{ id: str
         fetchPO();
     }, [resolvedParams.id]);
 
-    const handleStatusUpdate = async (newStatus: "approved" | "rejected") => {
+    const handleStatusUpdate = async (newStatus: "pending" | "approved" | "rejected") => {
         if (!po || !userProfile) return;
         setActionLoading(true);
 
@@ -101,7 +102,7 @@ export default function LiffPODetailPage({ params }: { params: Promise<{ id: str
                 updatedAt: serverTimestamp(),
             });
 
-            if (newStatus === "approved") {
+            if (newStatus === "approved" || newStatus === "pending") {
                 try {
                     await fetch("/api/line/notify", {
                         method: "POST",
@@ -122,6 +123,24 @@ export default function LiffPODetailPage({ params }: { params: Promise<{ id: str
         } catch (error) {
             console.error("Error updating PO status:", error);
             alert("ไม่สามารถอัปเดตสถานะได้");
+        } finally {
+            setActionLoading(false);
+        }
+    };
+
+    const handleMarkCompleted = async () => {
+        if (!po || !userProfile) return;
+        setActionLoading(true);
+        try {
+            const poRef = doc(db, "purchase_orders", po.id);
+            await updateDoc(poRef, {
+                isCompleted: true,
+                updatedAt: serverTimestamp(),
+            });
+            setPo({ ...po, isCompleted: true });
+        } catch (error) {
+            console.error("Error marking PO completed:", error);
+            alert("ไม่สามารถจัดเก็บเอกสารได้");
         } finally {
             setActionLoading(false);
         }
@@ -154,7 +173,10 @@ export default function LiffPODetailPage({ params }: { params: Promise<{ id: str
     const { items: displayItems, processingFee } = splitProcessingFeeItem(po.items || []);
     const itemsTotalBeforeFee = displayItems.reduce((sum, item) => sum + (Number(item.amount) || 0), 0);
 
-    const POStatusBadge = ({ status }: { status: string }) => {
+    const POStatusBadge = ({ status, isCompleted }: { status: string, isCompleted?: boolean }) => {
+        if (isCompleted) {
+            return <span className="rounded-md border border-purple-300 bg-purple-50 px-2.5 py-1 text-xs font-medium text-purple-700">สำเร็จแล้ว (เก็บ)</span>;
+        }
         switch (status) {
             case "approved":
                 return <span className="rounded-md border border-emerald-300 bg-emerald-50 px-2.5 py-1 text-xs font-medium text-emerald-700">อนุมัติแล้ว</span>;
@@ -197,7 +219,7 @@ export default function LiffPODetailPage({ params }: { params: Promise<{ id: str
                         <p className="text-xs text-slate-500">เลขที่เอกสาร</p>
                         <h2 className="text-lg font-semibold text-slate-900">{po.poNumber}</h2>
                     </div>
-                    <POStatusBadge status={po.status} />
+                    <POStatusBadge status={po.status} isCompleted={po.isCompleted} />
                 </section>
 
                 <section className="rounded-lg border border-slate-200 bg-white">
@@ -287,10 +309,12 @@ export default function LiffPODetailPage({ params }: { params: Promise<{ id: str
                             <span className="text-slate-600">ราคารวม</span>
                             <span className="font-medium text-slate-900">{formatMoney(itemsTotalBeforeFee)}</span>
                         </div>
-                        <div className="flex items-center justify-between text-sm">
-                            <span className="text-slate-600">ค่าดำเนินการ</span>
-                            <span className="font-medium text-slate-900">{formatMoney(processingFee)}</span>
-                        </div>
+                        {po.poType !== 'extra' && (
+                            <div className="flex items-center justify-between text-sm">
+                                <span className="text-slate-600">ค่าดำเนินการ</span>
+                                <span className="font-medium text-slate-900">{formatMoney(processingFee)}</span>
+                            </div>
+                        )}
                         <div className="flex items-center justify-between text-sm">
                             <span className="text-slate-600">รวมเป็นเงิน</span>
                             <span className="font-medium text-slate-900">{formatMoney(po.subTotal)}</span>
@@ -330,6 +354,40 @@ export default function LiffPODetailPage({ params }: { params: Promise<{ id: str
                             <span className="inline-flex items-center justify-center">
                                 {actionLoading ? <Loader2 size={18} className="mr-2 animate-spin" /> : <CheckCircle size={18} className="mr-2" />}
                                 อนุมัติสั่งซื้อ
+                            </span>
+                        </button>
+                    </div>
+                </div>
+            )}
+
+            {po.status === "approved" && !po.isCompleted && canApprove && (
+                <div className="fixed bottom-0 left-0 right-0 z-50 border-t border-slate-200 bg-white p-3 pb-[calc(env(safe-area-inset-bottom)+12px)]">
+                    <div className="mx-auto flex w-full max-w-3xl gap-3">
+                        <button
+                            onClick={handleMarkCompleted}
+                            disabled={actionLoading}
+                            className="w-full rounded-md border border-purple-700 bg-purple-700 px-3 py-3 text-sm font-medium text-white disabled:opacity-50"
+                        >
+                            <span className="inline-flex items-center justify-center">
+                                {actionLoading ? <Loader2 size={18} className="mr-2 animate-spin" /> : <CheckCircle size={18} className="mr-2" />}
+                                เสร็จสิ้น / จัดเก็บ
+                            </span>
+                        </button>
+                    </div>
+                </div>
+            )}
+
+            {(po.status === "draft" || po.status === "rejected") && user?.uid === po.createdBy && (
+                <div className="fixed bottom-0 left-0 right-0 z-50 border-t border-slate-200 bg-white p-3 pb-[calc(env(safe-area-inset-bottom)+12px)]">
+                    <div className="mx-auto flex w-full max-w-3xl gap-3">
+                        <button
+                            onClick={() => handleStatusUpdate("pending")}
+                            disabled={actionLoading}
+                            className="w-full rounded-md border border-blue-600 bg-blue-600 px-3 py-3 text-sm font-medium text-white disabled:opacity-50"
+                        >
+                            <span className="inline-flex items-center justify-center">
+                                {actionLoading ? <Loader2 size={18} className="mr-2 animate-spin" /> : <Send size={18} className="mr-2" />}
+                                ส่งอนุมัติ
                             </span>
                         </button>
                     </div>

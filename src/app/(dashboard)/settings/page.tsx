@@ -96,6 +96,7 @@ export default function SettingsPage() {
     const [indexStatuses, setIndexStatuses] = useState<{ name: string; status: 'idle' | 'loading' | 'ready' | 'missing' | 'error'; link?: string; errorMsg?: string }[]>([
         { name: "ใบสั่งซื้อ (PO) เรียงตามเวลา", status: 'idle' },
         { name: "งานเพิ่ม-ลด (VO) เรียงตามเวลา", status: 'idle' },
+        { name: "ใบจ้างงาน (WC) เรียงตามเวลา", status: 'idle' },
     ]);
 
     const checkIndexes = async () => {
@@ -128,6 +129,21 @@ export default function SettingsPage() {
                 setIndexStatuses(prev => prev.map(i => i.name.includes("VO") ? { ...i, status: 'missing', link: urlMatch ? urlMatch[0] : '' } : i));
             } else {
                 setIndexStatuses(prev => prev.map(i => i.name.includes("VO") ? { ...i, status: 'error', errorMsg: error.message } : i));
+            }
+        }
+
+        // 3. Check WC index
+        try {
+            const wcQ = query(collection(db, "work_contracts"), where("projectId", "==", "dummy"), orderBy("createdAt", "desc"), limit(1));
+            await getDocs(wcQ);
+            setIndexStatuses(prev => prev.map(i => i.name.includes("WC") ? { ...i, status: 'ready' } : i));
+        } catch (error: any) {
+            console.error("WC Index Check Error:", error);
+            if (error.message && error.message.includes("index")) {
+                const urlMatch = error.message.match(/https:\/\/console\.firebase\.google\.com[^\s]*/);
+                setIndexStatuses(prev => prev.map(i => i.name.includes("WC") ? { ...i, status: 'missing', link: urlMatch ? urlMatch[0] : '' } : i));
+            } else {
+                setIndexStatuses(prev => prev.map(i => i.name.includes("WC") ? { ...i, status: 'error', errorMsg: error.message } : i));
             }
         }
     };
@@ -446,8 +462,8 @@ export default function SettingsPage() {
                         type="button"
                         onClick={() => setActiveTab(tab.id)}
                         className={`flex items-center px-6 py-3 text-sm font-medium border-b-2 transition-colors whitespace-nowrap ${activeTab === tab.id
-                                ? 'border-blue-500 text-blue-600 bg-blue-50/50 rounded-t-lg'
-                                : 'border-transparent text-slate-500 hover:text-slate-700 hover:border-slate-300 hover:bg-slate-50 rounded-t-lg'
+                            ? 'border-blue-500 text-blue-600 bg-blue-50/50 rounded-t-lg'
+                            : 'border-transparent text-slate-500 hover:text-slate-700 hover:border-slate-300 hover:bg-slate-50 rounded-t-lg'
                             }`}
                     >
                         <tab.icon className={`w-4 h-4 mr-2 ${activeTab === tab.id ? 'text-blue-500' : 'text-slate-400'}`} />

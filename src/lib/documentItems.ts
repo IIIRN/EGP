@@ -1,4 +1,5 @@
 ﻿export const PROCESSING_FEE_LABEL = "ค่าดำเนินการ";
+export const FUEL_FEE_LABEL = "\u0E04\u0E48\u0E32\u0E19\u0E49\u0E33\u0E21\u0E31\u0E19";
 
 export type CsvDocumentItem = {
     description: string;
@@ -134,3 +135,30 @@ export function splitProcessingFeeItem<T extends MinimalItem>(items: T[]) {
 }
 
 
+
+
+export function splitAdditionalFeeItems<T extends MinimalItem>(items: T[]) {
+    if (!items.length) return { items, processingFee: 0, fuelFee: 0 };
+
+    const workingItems = items.slice();
+    let fuelFee = 0;
+    let processingFee = 0;
+
+    const lastItem = workingItems[workingItems.length - 1];
+    if (lastItem && normalizeText(lastItem.description) === normalizeText(FUEL_FEE_LABEL)) {
+        fuelFee = toNumber(lastItem.amount ?? lastItem.unitPrice);
+        workingItems.pop();
+    }
+
+    const secondLastItem = workingItems[workingItems.length - 1];
+    if (secondLastItem && normalizeText(secondLastItem.description) === normalizeText(PROCESSING_FEE_LABEL)) {
+        processingFee = toNumber(secondLastItem.amount ?? secondLastItem.unitPrice);
+        workingItems.pop();
+    }
+
+    return {
+        items: workingItems,
+        processingFee,
+        fuelFee,
+    };
+}

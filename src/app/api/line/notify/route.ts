@@ -109,7 +109,7 @@ function buildPOFlex(params: {
     const { isPending, projectName, data, vendorData, approveUrl, hasApproveButton } = params;
     const statusText = isPending ? "รออนุมัติ" : "อนุมัติแล้ว";
 
-    const footerContents: any[] = [];
+    const footerContents: unknown[] = [];
     if (hasApproveButton) {
         footerContents.push({
             type: "button",
@@ -120,7 +120,7 @@ function buildPOFlex(params: {
         });
     }
 
-    const secondaryButtons: any[] = [];
+    const secondaryButtons: unknown[] = [];
     if (vendorData?.phone) {
         secondaryButtons.push({
             type: "button",
@@ -243,6 +243,88 @@ function buildVOFlex(params: {
             ],
         },
         footer,
+        styles: {
+            body: { backgroundColor: "#ffffff" },
+            footer: { backgroundColor: COLOR.surface, separator: true },
+        },
+    };
+}
+
+function buildWCFlex(params: {
+    isPending: boolean;
+    projectName?: string;
+    data?: unknown;
+    vendorData?: unknown;
+    approveUrl: string;
+    hasApproveButton: boolean;
+}) {
+    const { isPending, projectName, data, vendorData, approveUrl, hasApproveButton } = params;
+    const statusText = isPending ? "รออนุมัติ" : "อนุมัติแล้ว";
+    const docData = (data && typeof data === "object") ? (data as Record<string, unknown>) : {};
+    const vendorInfo = (vendorData && typeof vendorData === "object") ? (vendorData as Record<string, unknown>) : {};
+
+    const footerContents: unknown[] = [];
+    if (hasApproveButton) {
+        footerContents.push({
+            type: "button",
+            style: "primary",
+            color: COLOR.primary,
+            height: "sm",
+            action: { type: "uri", label: "ตรวจสอบและอนุมัติ", uri: approveUrl },
+        });
+    }
+
+    const secondaryButtons: unknown[] = [];
+    if (vendorInfo.phone) {
+        secondaryButtons.push({
+            type: "button",
+            style: "secondary",
+            height: "sm",
+            action: { type: "uri", label: "โทร", uri: `tel:${asText(vendorInfo.phone, "")}` },
+        });
+    }
+    if (secondaryButtons.length > 0) {
+        footerContents.push({
+            type: "box",
+            layout: "horizontal",
+            spacing: "sm",
+            contents: secondaryButtons,
+        });
+    }
+
+    return {
+        type: "bubble",
+        size: "mega",
+        body: {
+            type: "box",
+            layout: "vertical",
+            spacing: "md",
+            contents: [
+                { type: "text", text: asText(projectName, "ไม่ระบุโครงการ"), size: "sm", color: COLOR.title, weight: "bold", wrap: true },
+                { type: "separator", color: COLOR.border },
+                {
+                    type: "box",
+                    layout: "vertical",
+                    spacing: "sm",
+                    contents: [
+                        infoRow("ประเภทเอกสาร", "ใบจ้างงาน (WC)"),
+                        infoRow("สถานะ", statusText, { valueColor: COLOR.title, valueWeight: "bold" }),
+                        infoRow("เลขที่เอกสาร", asText(docData.wcNumber)),
+                        infoRow("ผู้รับจ้าง", asText(vendorInfo.name || docData.vendorName)),
+                        infoRow("เบอร์โทร", asText(vendorInfo.phone)),
+                        infoRow("ยอดรวมทั้งสิ้น", formatAmount(docData.totalAmount), { valueColor: COLOR.title, valueWeight: "bold" }),
+                    ],
+                },
+            ],
+        },
+        footer: footerContents.length > 0
+            ? {
+                type: "box",
+                layout: "vertical",
+                spacing: "sm",
+                contents: footerContents,
+            }
+            : undefined,
         styles: {
             body: { backgroundColor: "#ffffff" },
             footer: { backgroundColor: COLOR.surface, separator: true },
@@ -395,6 +477,17 @@ export async function POST(request: Request) {
                 isPending,
                 projectName,
                 data,
+                approveUrl,
+                hasApproveButton: isPending && !!liffId,
+            });
+        } else if (type === "WC") {
+            const wcNo = asText(data?.wcNumber, "-");
+            altText = isPending ? `WC รออนุมัติ - ${wcNo}` : `WC อนุมัติแล้ว - ${wcNo}`;
+            flexContents = buildWCFlex({
+                isPending,
+                projectName,
+                data,
+                vendorData,
                 approveUrl,
                 hasApproveButton: isPending && !!liffId,
             });

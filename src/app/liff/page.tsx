@@ -3,8 +3,8 @@
 import { useAuth } from "@/context/AuthContext";
 import { useProject } from "@/context/ProjectContext";
 import { db } from "@/lib/firebase";
-import { FileText, Phone, MapPin, Search, ChevronRight, Loader2, Info, Store, ChevronDown, Pencil } from "lucide-react";
-import { collection, query, where, orderBy, onSnapshot, doc, getDoc, limit } from "firebase/firestore";
+import { FileText, Phone, MapPin, Search, ChevronRight, Loader2, Info, Store, ChevronDown, Pencil, CheckCircle } from "lucide-react";
+import { collection, query, where, orderBy, onSnapshot, doc, getDoc, limit, updateDoc, serverTimestamp } from "firebase/firestore";
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { PurchaseOrder } from "@/types/po";
@@ -35,7 +35,20 @@ export default function LiffDashboard() {
     const filteredPOs = pos.filter(po => {
         const matchesSearch = po.poNumber.toLowerCase().includes(poSearch.toLowerCase()) ||
             po.vendorName?.toLowerCase().includes(poSearch.toLowerCase());
-        const matchesStatus = statusFilter === "all" || po.status === statusFilter;
+
+        let matchesStatus = false;
+        if (statusFilter === "completed") {
+            matchesStatus = po.isCompleted === true;
+        } else {
+            if (po.isCompleted) {
+                matchesStatus = false;
+            } else if (statusFilter === "all") {
+                matchesStatus = true;
+            } else {
+                matchesStatus = po.status === statusFilter;
+            }
+        }
+
         return matchesSearch && matchesStatus;
     });
 
@@ -49,6 +62,26 @@ export default function LiffDashboard() {
 
     // defaults to true unless explicitly false in .env
     const isDevMode = process.env.NEXT_PUBLIC_SHOW_DEV_MODE !== "false";
+    const canApprove = userProfile?.role === "admin" || userProfile?.role === "pm";
+
+    const [actionLoadingId, setActionLoadingId] = useState<string | null>(null);
+
+    const handleMarkCompleted = async (poId: string) => {
+        if (!userProfile) return;
+        setActionLoadingId(poId);
+        try {
+            const poRef = doc(db, "purchase_orders", poId);
+            await updateDoc(poRef, {
+                isCompleted: true,
+                updatedAt: serverTimestamp(),
+            });
+        } catch (error) {
+            console.error("Error marking PO completed:", error);
+            alert("ไม่สามารถจัดเก็บเอกสารได้");
+        } finally {
+            setActionLoadingId(null);
+        }
+    };
 
     useEffect(() => {
         const initLiff = async () => {
@@ -203,7 +236,10 @@ export default function LiffDashboard() {
         );
     }
 
-    const POStatusBadge = ({ status }: { status: string }) => {
+    const POStatusBadge = ({ status, isCompleted }: { status: string, isCompleted?: boolean }) => {
+        if (isCompleted) {
+            return <span className="px-2 py-0.5 text-xs font-semibold rounded-full bg-purple-100 text-purple-700">สำเร็จแล้ว (เก็บ)</span>;
+        }
         switch (status) {
             case 'approved': return <span className="px-2 py-0.5 text-xs font-semibold rounded-full bg-green-100 text-green-700">อนุมัติแล้ว</span>;
             case 'rejected': return <span className="px-2 py-0.5 text-xs font-semibold rounded-full bg-red-100 text-red-700">ไม่อนุมัติ</span>;
@@ -299,19 +335,20 @@ export default function LiffDashboard() {
                         </div>
 
                         <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-hide no-scrollbar -mx-1 px-1">
-                            {['all', 'pending', 'approved', 'rejected', 'draft'].map((status) => (
+                            {['all', 'pending', 'approved', 'completed', 'rejected', 'draft'].map((status) => (
                                 <button
                                     key={status}
                                     onClick={() => setStatusFilter(status)}
                                     className={`px-4 py-1.5 rounded-full text-[11px] font-bold whitespace-nowrap transition-all border ${statusFilter === status
-                                            ? 'bg-blue-700 border-blue-700 text-white'
-                                            : 'bg-white border-slate-100 text-slate-500 hover:bg-slate-50'
+                                        ? 'bg-blue-700 border-blue-700 text-white'
+                                        : 'bg-white border-slate-100 text-slate-500 hover:bg-slate-50'
                                         }`}
                                 >
                                     {status === 'all' ? 'ทั้งหมด' :
                                         status === 'pending' ? 'รออนุมัติ' :
                                             status === 'approved' ? 'อนุมัติแล้ว' :
-                                                status === 'rejected' ? 'ไม่อนุมัติ' : 'ฉบับร่าง'}
+                                                status === 'completed' ? 'สำเร็จแล้ว (เก็บ)' :
+                                                    status === 'rejected' ? 'ไม่อนุมัติ' : 'ฉบับร่าง'}
                                 </button>
                             ))}
                         </div>
@@ -335,7 +372,7 @@ export default function LiffDashboard() {
                                     </span>
                                 )}
                             </div>
-                            <POStatusBadge status={po.status} />
+                            <POStatusBadge status={po.status} isCompleted={po.isCompleted} />
                         </div>
                         <p className="text-sm font-bold text-slate-700 mb-1 line-clamp-1">{po.vendorName}</p>
                         <div className="flex justify-between items-end">
@@ -360,9 +397,19 @@ export default function LiffDashboard() {
                             >
                                 <MapPin size={14} className="mr-1.5" /> แผนที่
                             </a>
+                            {po.status === "approved" && !po.isCompleted && canApprove && (
+                                <button
+                                    onClick={() => handleMarkCompleted(po.id)}
+                                    disabled={actionLoadingId === po.id}
+                                    className="flex-1 flex justify-center items-center py-2.5 px-3 rounded-lg text-xs font-bold transition-colors bg-purple-50 text-purple-700 border border-purple-200 active:bg-purple-100 disabled:opacity-50"
+                                >
+                                    {actionLoadingId === po.id ? <Loader2 size={14} className="mr-1.5 animate-spin" /> : <CheckCircle size={14} className="mr-1.5" />}
+                                    จัดเก็บ
+                                </button>
+                            )}
                             <Link
                                 href={`/liff/po/${po.id}`}
-                                className="w-12 flex justify-center items-center py-2.5 rounded-lg bg-slate-900 text-white active:bg-slate-800 transition-colors font-bold"
+                                className="w-12 flex justify-center items-center py-2.5 rounded-lg bg-slate-900 text-white active:bg-slate-800 transition-colors font-bold shrink-0"
                             >
                                 <ChevronRight size={18} />
                             </Link>
@@ -370,7 +417,7 @@ export default function LiffDashboard() {
                     </div>
                 ))}
 
-                {!loading && activeTab === 'PO' && pos.length > 0 && filteredPOs.length < pos.length && (
+                {!loading && activeTab === 'PO' && filteredPOs.length > 0 && pos.length >= poLimit && (
                     <div className="text-center py-4">
                         <button
                             onClick={() => setPoLimit(prev => prev + 20)}

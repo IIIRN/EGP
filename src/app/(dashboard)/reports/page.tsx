@@ -23,6 +23,7 @@ export default function ReportsPage() {
     const [wcsByProject, setWcsByProject] = useState<Record<string, any[]>>({});
     const [loadingStats, setLoadingStats] = useState(true);
     const [expandedProjectId, setExpandedProjectId] = useState<string | null>(null);
+    const [showCompleted, setShowCompleted] = useState(false);
 
     useEffect(() => {
         // Fetch all approved POs
@@ -113,12 +114,13 @@ export default function ReportsPage() {
     }, []);
 
     // Summaries
-    const totalProjects = allProjects.length;
-    const totalBudget = allProjects.reduce((sum, p) => sum + (p.budget || 0), 0);
-    const totalVO = Object.values(statsMap).reduce((sum, s) => sum + s.approvedVOTotal, 0);
+    const filteredProjects = allProjects.filter(p => showCompleted ? true : p.status !== 'completed');
+    const totalProjects = filteredProjects.length;
+    const totalBudget = filteredProjects.reduce((sum, p) => sum + (p.budget || 0), 0);
+    const totalVO = filteredProjects.reduce((sum, p) => sum + (statsMap[p.id]?.approvedVOTotal || 0), 0);
     const totalNetBudget = totalBudget + totalVO;
-    const totalPO = Object.values(statsMap).reduce((sum, s) => sum + s.approvedPOTotal, 0);
-    const totalWC = Object.values(statsMap).reduce((sum, s) => sum + (s.approvedWCTotal || 0), 0);
+    const totalPO = filteredProjects.reduce((sum, p) => sum + (statsMap[p.id]?.approvedPOTotal || 0), 0);
+    const totalWC = filteredProjects.reduce((sum, p) => sum + (statsMap[p.id]?.approvedWCTotal || 0), 0);
     const totalUsed = totalPO + totalWC;
     const totalAvailable = totalNetBudget - totalUsed;
     const overallUsedPercent = totalNetBudget > 0 ? (totalUsed / totalNetBudget) * 100 : 0;
@@ -194,11 +196,19 @@ export default function ReportsPage() {
 
             {/* Detailed Projects Table */}
             <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
-                <div className="p-5 border-b border-slate-200 bg-slate-50/50 flex items-center justify-between">
+                <div className="p-5 border-b border-slate-200 bg-slate-50/50 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                     <h3 className="font-bold text-slate-800 text-lg flex items-center">
                         <Building2 className="mr-2 text-slate-400" size={20} />
                         รายละเอียดแยกตามโครงการ
                     </h3>
+                    <div className="flex items-center gap-2">
+                        <button
+                            onClick={() => setShowCompleted(!showCompleted)}
+                            className={`px-3 py-1.5 text-sm font-medium rounded-lg border transition-colors ${showCompleted ? 'bg-blue-50 text-blue-700 border-blue-200 hover:bg-blue-100' : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'}`}
+                        >
+                            {showCompleted ? 'ซ่อนโครงการที่เสร็จสิ้น' : 'แสดงโครงการที่เสร็จสิ้น'}
+                        </button>
+                    </div>
                 </div>
 
                 <div className="overflow-x-auto">
@@ -207,22 +217,22 @@ export default function ReportsPage() {
                             <tr>
                                 <th scope="col" className="px-6 py-4 text-left text-xs font-bold text-slate-500 uppercase tracking-wider w-1/5">โครงการ</th>
                                 <th scope="col" className="px-6 py-4 text-right text-xs font-bold text-slate-500 uppercase tracking-wider">งบตั้งต้น</th>
-                                <th scope="col" className="px-6 py-4 text-right text-xs font-bold text-slate-500 uppercase tracking-wider">งานลด-เพิ่ม (VO)</th>
-                                <th scope="col" className="px-6 py-4 text-right text-xs font-bold text-slate-500 uppercase tracking-wider bg-slate-100/50">งบสุทธิ</th>
                                 <th scope="col" className="px-6 py-4 text-right text-xs font-bold text-slate-500 uppercase tracking-wider">สั่งซื้อ (PO)</th>
                                 <th scope="col" className="px-6 py-4 text-right text-xs font-bold text-slate-500 uppercase tracking-wider">จ้างงาน (WC)</th>
+                                <th scope="col" className="px-6 py-4 text-right text-xs font-bold text-slate-500 uppercase tracking-wider">งานลด-เพิ่ม (VO)</th>
+                                <th scope="col" className="px-6 py-4 text-right text-xs font-bold text-slate-500 uppercase tracking-wider bg-slate-100/50">งบสุทธิ</th>
                                 <th scope="col" className="px-6 py-4 text-right text-xs font-bold text-slate-500 uppercase tracking-wider bg-blue-50/30">คงเหลือ</th>
                                 <th scope="col" className="px-6 py-4 text-center text-xs font-bold text-slate-500 uppercase tracking-wider">% เบิกจ่าย</th>
                                 <th scope="col" className="px-3 py-4"></th>
                             </tr>
                         </thead>
                         <tbody className="bg-white divide-y divide-slate-100">
-                            {allProjects.length === 0 ? (
+                            {filteredProjects.length === 0 ? (
                                 <tr>
                                     <td colSpan={9} className="px-6 py-10 text-center text-slate-500">ไม่มีข้อมูลโครงการ</td>
                                 </tr>
                             ) : (
-                                allProjects.map(project => {
+                                filteredProjects.map(project => {
                                     const stats = statsMap[project.id] || { approvedPOTotal: 0, approvedWCTotal: 0, approvedVOTotal: 0 };
                                     const initial = project.budget || 0;
                                     const voTotal = stats.approvedVOTotal;
@@ -261,14 +271,6 @@ export default function ReportsPage() {
                                                 <td className="px-6 py-4 text-right text-sm text-slate-600 font-medium">
                                                     {initial.toLocaleString(undefined, { minimumFractionDigits: 2 })}
                                                 </td>
-                                                <td className="px-6 py-4 text-right text-sm font-medium">
-                                                    <span className={voTotal > 0 ? 'text-green-600' : voTotal < 0 ? 'text-red-500' : 'text-slate-400'}>
-                                                        {voTotal > 0 ? '+' : ''}{voTotal.toLocaleString(undefined, { minimumFractionDigits: 2 })}
-                                                    </span>
-                                                </td>
-                                                <td className="px-6 py-4 text-right text-sm font-bold text-slate-800 bg-slate-100/30">
-                                                    {netBudget.toLocaleString(undefined, { minimumFractionDigits: 2 })}
-                                                </td>
                                                 <td className="px-6 py-4 text-right text-sm font-semibold text-orange-600">
                                                     {poTotal.toLocaleString(undefined, { minimumFractionDigits: 2 })}
                                                     <div className="text-[10px] text-slate-400 mt-0.5">{projectPOs.length} ใบสั่งซื้อ</div>
@@ -276,6 +278,14 @@ export default function ReportsPage() {
                                                 <td className="px-6 py-4 text-right text-sm font-semibold text-emerald-600">
                                                     {wcTotal.toLocaleString(undefined, { minimumFractionDigits: 2 })}
                                                     <div className="text-[10px] text-slate-400 mt-0.5">{projectWCs.length} ใบจ้างงาน</div>
+                                                </td>
+                                                <td className="px-6 py-4 text-right text-sm font-medium">
+                                                    <span className={voTotal > 0 ? 'text-green-600' : voTotal < 0 ? 'text-red-500' : 'text-slate-400'}>
+                                                        {voTotal > 0 ? '+' : ''}{voTotal.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                                                    </span>
+                                                </td>
+                                                <td className="px-6 py-4 text-right text-sm font-bold text-slate-800 bg-slate-100/30">
+                                                    {netBudget.toLocaleString(undefined, { minimumFractionDigits: 2 })}
                                                 </td>
                                                 <td className="px-6 py-4 text-right text-sm font-bold bg-blue-50/20">
                                                     <span className={isOver ? 'text-red-600' : 'text-blue-600'}>
@@ -400,14 +410,14 @@ export default function ReportsPage() {
                             <tr>
                                 <td className="px-6 py-4 text-left text-sm font-bold">รวมทั้งหมด</td>
                                 <td className="px-6 py-4 text-right text-sm font-bold">{totalBudget.toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
+                                <td className="px-6 py-4 text-right text-sm font-bold text-orange-300">{totalPO.toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
+                                <td className="px-6 py-4 text-right text-sm font-bold text-emerald-300">{totalWC.toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
                                 <td className="px-6 py-4 text-right text-sm font-bold">
                                     <span className={totalVO > 0 ? 'text-green-400' : totalVO < 0 ? 'text-red-400' : 'text-slate-400'}>
                                         {totalVO > 0 ? '+' : ''}{totalVO.toLocaleString(undefined, { minimumFractionDigits: 2 })}
                                     </span>
                                 </td>
                                 <td className="px-6 py-4 text-right text-sm font-bold">{totalNetBudget.toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
-                                <td className="px-6 py-4 text-right text-sm font-bold text-orange-300">{totalPO.toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
-                                <td className="px-6 py-4 text-right text-sm font-bold text-emerald-300">{totalWC.toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
                                 <td className="px-6 py-4 text-right text-sm font-bold text-blue-300">{totalAvailable.toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
                                 <td className="px-6 py-4 text-center text-sm font-bold">
                                     <span className={overallUsedPercent > 100 ? 'text-red-400' : 'text-white'}>

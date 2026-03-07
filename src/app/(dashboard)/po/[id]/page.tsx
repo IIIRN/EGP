@@ -2,8 +2,9 @@
 
 import { use, useEffect, useState } from "react";
 import Link from "next/link";
-import { ArrowLeft, CheckCircle, XCircle, Printer, FileText, Loader2, Edit } from "lucide-react";
-import { doc, getDoc, updateDoc, serverTimestamp } from "firebase/firestore";
+import { useRouter } from "next/navigation";
+import { ArrowLeft, CheckCircle, XCircle, Printer, FileText, Loader2, Edit, Trash2 } from "lucide-react";
+import { doc, getDoc, updateDoc, serverTimestamp, deleteDoc } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { PurchaseOrder } from "@/types/po";
 import { useAuth } from "@/context/AuthContext";
@@ -29,12 +30,14 @@ type CompanySettings = {
 
 export default function PODetailPage({ params }: { params: Promise<{ id: string }> }) {
     const resolvedParams = use(params);
+    const router = useRouter();
     const { userProfile } = useAuth();
     const { currentProject } = useProject();
 
     const [po, setPo] = useState<PurchaseOrder | null>(null);
     const [loading, setLoading] = useState(true);
     const [actionLoading, setActionLoading] = useState(false);
+    const [deleting, setDeleting] = useState(false);
 
     const [companySettings, setCompanySettings] = useState<CompanySettings>({
         name: "บริษัท พาวเวอร์เทค เอนจิเนียริ่ง จำกัด",
@@ -129,6 +132,23 @@ export default function PODetailPage({ params }: { params: Promise<{ id: string 
         }
     };
 
+    const handleDelete = async () => {
+        if (!po || !resolvedParams.id) return;
+        if (!window.confirm(`คุณแน่ใจหรือไม่ว่าต้องการลบใบสั่งซื้อ \"${po.poNumber}\"?\nการกระทำนี้ลบถาวรและไม่สามารถกู้คืนได้`)) {
+            return;
+        }
+
+        setDeleting(true);
+        try {
+            await deleteDoc(doc(db, "purchase_orders", resolvedParams.id));
+            router.push("/po");
+        } catch (error) {
+            console.error("Error deleting PO:", error);
+            alert("ลบข้อมูลไม่สำเร็จ");
+            setDeleting(false);
+        }
+    };
+
     if (loading) {
         return (
             <div className="flex flex-col items-center justify-center p-12">
@@ -151,8 +171,9 @@ export default function PODetailPage({ params }: { params: Promise<{ id: string 
 
     const isPending = po.status === "pending";
     const canApprove = userProfile?.role === "admin" || userProfile?.role === "pm";
-    const { items: displayItems, processingFee } = splitProcessingFeeItem(po.items);
-    const itemsTotalBeforeFee = displayItems.reduce((sum, item) => sum + (item.amount || 0), 0);
+    const { items: displayItems } = splitProcessingFeeItem(po.items);
+    const minDisplayRows = 10;
+    const emptyRowCount = Math.max(0, minDisplayRows - displayItems.length);
 
     const formatCreatedAt = (value: unknown) => {
         if (value && typeof value === "object" && "toDate" in value) {
@@ -173,7 +194,7 @@ export default function PODetailPage({ params }: { params: Promise<{ id: string 
                         <ArrowLeft size={20} />
                     </Link>
                     <div>
-                        <h1 className="text-xl md:text-2xl font-bold text-slate-900">รายละเอียดใบสั่งซื้อ</h1>
+                        <h1 className="text-lg md:text-xl font-bold text-slate-900">รายละเอียดใบสั่งซื้อ</h1>
                         <p className="text-sm text-slate-500 mt-1">
                             {po.poNumber} • โครงการ: {currentProject?.name}
                         </p>
@@ -190,13 +211,23 @@ export default function PODetailPage({ params }: { params: Promise<{ id: string 
                     </button>
 
                     {(po.status === "draft" || po.status === "rejected") && (
-                        <Link
-                            href={`/po/${po.id}/edit`}
-                            className="inline-flex items-center justify-center rounded-lg bg-blue-50 text-blue-600 border border-blue-200 px-4 py-2 text-sm font-semibold shadow-sm hover:bg-blue-100 transition-colors"
-                        >
-                            <Edit size={16} className="mr-2" />
-                            แก้ไขใบสั่งซื้อ
-                        </Link>
+                        <>
+                            <Link
+                                href={`/po/${po.id}/edit`}
+                                className="inline-flex items-center justify-center rounded-lg bg-blue-50 text-blue-600 border border-blue-200 px-4 py-2 text-sm font-semibold shadow-sm hover:bg-blue-100 transition-colors"
+                            >
+                                <Edit size={16} className="mr-2" />
+                                แก้ไขใบสั่งซื้อ
+                            </Link>
+                            <button
+                                onClick={handleDelete}
+                                disabled={deleting}
+                                className="inline-flex items-center justify-center rounded-lg bg-white text-red-600 border border-red-200 px-4 py-2 text-sm font-semibold shadow-sm hover:bg-red-50 transition-colors disabled:opacity-50"
+                            >
+                                {deleting ? <Loader2 size={16} className="mr-2 animate-spin" /> : <Trash2 size={16} className="mr-2" />}
+                                ลบ
+                            </button>
+                        </>
                     )}
 
                     {isPending && canApprove && (
@@ -277,7 +308,7 @@ export default function PODetailPage({ params }: { params: Promise<{ id: string 
                                 {po.poType === 'extra' ? 'EXTRA PURCHASE ORDER' : 'PURCHASE ORDER'}
                             </div>
                             <div className="text-right font-bold text-[12px]">
-                                {companySettings.name} มีความยินดีที่จะจัดจ้างงาน ตามรายการดังต่อไปนี้
+                                {companySettings.name} มีความยินดีที่จะสั่งซื้อสินค้าตามรายการดังต่อไปนี้
                             </div>
                         </div>
 
@@ -313,34 +344,19 @@ export default function PODetailPage({ params }: { params: Promise<{ id: string 
                                         </td>
                                     </tr>
                                 ))}
-                                <tr>
-                                    <td className="border-x border-black py-1.5 px-1 text-center font-bold">{displayItems.length + 1}</td>
-                                    <td className="border-x border-black py-1.5 px-2 font-bold">ราคารวม</td>
-                                    <td className="border-x border-black py-1.5 px-1 text-center"></td>
-                                    <td className="border-x border-black py-1.5 px-1 text-center"></td>
-                                    <td className="border-x border-black py-1.5 px-1 text-right"></td>
-                                    <td className="border-x border-black py-1.5 px-1 text-right"></td>
-                                    <td className="border-x border-black py-1.5 px-2 text-right font-bold">{itemsTotalBeforeFee.toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
-                                </tr>
-                                <tr>
-                                    <td className="border-x border-black py-1.5 px-1 text-center font-bold">{displayItems.length + 2}</td>
-                                    <td className="border-x border-black py-1.5 px-2 font-bold">ค่าดำเนินการ</td>
-                                    <td className="border-x border-black py-1.5 px-1 text-center"></td>
-                                    <td className="border-x border-black py-1.5 px-1 text-center"></td>
-                                    <td className="border-x border-black py-1.5 px-1 text-right"></td>
-                                    <td className="border-x border-black py-1.5 px-1 text-right"></td>
-                                    <td className="border-x border-black py-1.5 px-2 text-right font-bold">{processingFee.toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
-                                </tr>
-                                {/* Pad empty row for visual height */}
-                                <tr>
-                                    <td className="border-x border-black h-[120px]"></td>
-                                    <td className="border-x border-black h-[120px]"></td>
-                                    <td className="border-x border-black h-[120px]"></td>
-                                    <td className="border-x border-black h-[120px]"></td>
-                                    <td className="border-x border-black h-[120px] border-b-2"></td>
-                                    <td className="border-x border-black h-[120px] border-b-2"></td>
-                                    <td className="border-x border-black h-[120px]"></td>
-                                </tr>
+
+                                {/* Keep table height stable when there are only a few items */}
+                                {Array.from({ length: emptyRowCount }).map((_, index) => (
+                                    <tr key={`empty-row-${index}`} className="align-top h-8">
+                                        <td className="border-x border-black py-1.5 px-1 text-center"></td>
+                                        <td className="border-x border-black py-1.5 px-2"></td>
+                                        <td className="border-x border-black py-1.5 px-1 text-center"></td>
+                                        <td className="border-x border-black py-1.5 px-1 text-center"></td>
+                                        <td className="border-x border-black py-1.5 px-1 text-right"></td>
+                                        <td className="border-x border-black py-1.5 px-1 text-right"></td>
+                                        <td className="border-x border-black py-1.5 px-2 text-right"></td>
+                                    </tr>
+                                ))}
                                 {/* Payment Term sub row inside table */}
                                 <tr>
                                     <td colSpan={4} className="border-x border-t border-black py-1 px-2 uppercase font-bold text-xs align-bottom">PAYMENT TERM เครดิต {po.creditDays ?? 30} วัน</td>
@@ -350,13 +366,12 @@ export default function PODetailPage({ params }: { params: Promise<{ id: string 
                             </tbody>
                             <tfoot>
                                 <tr>
-                                    <td className="border-x border-b-transparent p-0 align-top" colSpan={4} rowSpan={1}>
+                                    <td className="border border-t-0 border-black p-0 align-top h-28" colSpan={4} rowSpan={2}>
                                     </td>
                                     <td colSpan={2} className="border border-black py-1.5 px-2 text-center font-bold">Vat {po.vatRate}%</td>
                                     <td className="border border-black py-1.5 px-2 text-right">{po.vatAmount?.toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
                                 </tr>
                                 <tr>
-                                    <td className="border-x border-b border-black font-bold p-2 text-center h-28" colSpan={4}></td>
                                     <td colSpan={2} className="border border-black py-1.5 px-2 text-center font-bold">Total Included Vat</td>
                                     <td className="border border-black py-1.5 px-2 text-right font-bold">{po.totalAmount?.toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
                                 </tr>
@@ -366,9 +381,9 @@ export default function PODetailPage({ params }: { params: Promise<{ id: string 
                         {/* Signatures */}
                         <div className="grid grid-cols-1 md:grid-cols-2 print:grid-cols-2 text-[11px] font-semibold mt-4">
                             <div></div>
-                            <div className="text-center space-y-12 w-full max-w-[400px] ml-auto">
+                            <div className="text-center space-y-12 w-full max-w-[300px] ml-auto">
                                 <div className="-ml-10">
-                                    {companySettings.name} หวังว่าท่านจะได้รับความไว้วางใจให้ดำเนินการ <br />
+                                    {companySettings.name} หวังเป็นอย่างยิ่งว่าจะได้รับสินค้าที่ถูกต้องตามกำหนดเวลา <br />
                                     <span className="font-bold">และขอขอบคุณมา ณ โอกาสนี้ ด้วยความนับถือ</span>
                                 </div>
                                 <div className="flex justify-center gap-8 -ml-10">

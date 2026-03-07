@@ -148,16 +148,20 @@ export default function VendorsPage() {
         });
     };
 
+    const formatCsvText = (val: string | undefined | null) => {
+        if (!val) return "";
+        return `\t${val}`; // Prefix with tab to force Excel to treat it as text
+    };
+
     const handleExportCsv = () => {
         const rows = vendors
             .slice()
             .sort((a, b) => (a.name || "").localeCompare(b.name || "", "th"))
             .map((vendor) => ([
-                vendor.id,
                 vendor.name || "",
-                vendor.taxId || "",
+                formatCsvText(vendor.taxId),
                 vendor.contactName || "",
-                vendor.phone || "",
+                formatCsvText(vendor.phone),
                 vendor.email || "",
                 vendor.address || "",
                 vendor.googleMapUrl || "",
@@ -168,7 +172,7 @@ export default function VendorsPage() {
         const date = new Date().toISOString().slice(0, 10);
         downloadCsv(
             `vendors_${date}.csv`,
-            ["doc_id", "name", "tax_id", "contact_name", "phone", "email", "address", "google_map_url", "is_active", "vendor_types"],
+            ["ชื่อร้านค้า", "เลขผู้เสียภาษี", "ชื่อผู้ติดต่อ", "เบอร์โทรศัพท์", "อีเมล", "ที่อยู่", "ลิงก์แผนที่", "สถานะ", "ประเภทสินค้า"],
             rows
         );
     };
@@ -190,28 +194,25 @@ export default function VendorsPage() {
             const dataRows = rows.slice(1);
             const findIndex = (candidates: string[]) => headers.findIndex((header) => candidates.some((candidate) => header.includes(candidate)));
 
-            const docIdIndex = findIndex(["docid", "documentid"]);
-            const nameIndex = findIndex(["name", "vendorname", "company"]);
-            const taxIdIndex = findIndex(["taxid"]);
-            const contactNameIndex = findIndex(["contactname"]);
-            const phoneIndex = findIndex(["phone"]);
-            const emailIndex = findIndex(["email"]);
-            const addressIndex = findIndex(["address"]);
-            const mapIndex = findIndex(["googlemapurl", "mapurl", "maps"]);
-            const activeIndex = findIndex(["isactive", "active", "status"]);
-            const typesIndex = findIndex(["vendortypes", "types", "category"]);
+            const nameIndex = findIndex(["name", "vendorname", "company", "ชื่อร้านค้า", "บริษัท"]);
+            const taxIdIndex = findIndex(["taxid", "เลขผู้เสียภาษี"]);
+            const contactNameIndex = findIndex(["contactname", "ชื่อผู้ติดต่อ"]);
+            const phoneIndex = findIndex(["phone", "เบอร์โทรศัพท์", "เบอร์โทร"]);
+            const emailIndex = findIndex(["email", "อีเมล"]);
+            const addressIndex = findIndex(["address", "ที่อยู่"]);
+            const mapIndex = findIndex(["googlemapurl", "mapurl", "maps", "ลิงก์แผนที่", "แผนที่"]);
+            const activeIndex = findIndex(["isactive", "active", "status", "สถานะ"]);
+            const typesIndex = findIndex(["vendortypes", "types", "category", "ประเภทสินค้า", "ประเภท"]);
 
             if (nameIndex < 0) {
                 alert("CSV must include vendor name column (for example: name)");
                 return;
             }
 
-            const existingByDocId = new Map<string, Vendor>();
             const existingByTaxId = new Map<string, Vendor>();
             const existingByName = new Map<string, Vendor>();
 
             for (const item of vendors) {
-                existingByDocId.set(item.id, item);
                 if (item.taxId && item.taxId !== "-") {
                     existingByTaxId.set(item.taxId.trim().toLowerCase(), item);
                 }
@@ -229,11 +230,9 @@ export default function VendorsPage() {
                     continue;
                 }
 
-                const rawDocId = docIdIndex >= 0 ? (row[docIdIndex] || "").trim() : "";
                 const rawTaxId = taxIdIndex >= 0 ? (row[taxIdIndex] || "").trim() : "";
 
                 const existing =
-                    (rawDocId ? existingByDocId.get(rawDocId) : undefined) ||
                     (rawTaxId ? existingByTaxId.get(rawTaxId.toLowerCase()) : undefined) ||
                     existingByName.get(rawName.toLowerCase());
 

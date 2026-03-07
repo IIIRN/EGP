@@ -1,10 +1,10 @@
 "use client";
 
 import { useProject } from "@/context/ProjectContext";
-import { Plus, Search, FileText, Eye, Trash2, Briefcase } from "lucide-react";
+import { Plus, Search, Eye, Briefcase } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { collection, query, where, onSnapshot, deleteDoc, doc } from "firebase/firestore";
+import { collection, query, where, onSnapshot } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { WorkContract } from "@/types/wc";
 
@@ -76,18 +76,6 @@ export default function WCListingPage() {
             case "approved": return { label: "อนุมัติแล้ว", color: "bg-green-100 text-green-800" };
             case "rejected": return { label: "ไม่อนุมัติ", color: "bg-red-100 text-red-800" };
             default: return { label: status, color: "bg-slate-100 text-slate-800" };
-        }
-    };
-
-    const handleDelete = async (wcId: string, wcNumber: string) => {
-        if (!window.confirm(`คุณแน่ใจหรือไม่ว่าต้องการลบใบจ้างงาน ${wcNumber}? ข้อมูลจะไม่สามารถกู้คืนได้`)) {
-            return;
-        }
-        try {
-            await deleteDoc(doc(db, "work_contracts", wcId));
-        } catch (error) {
-            console.error("Error deleting WC:", error);
-            alert("เกิดข้อผิดพลาดในการลบใบจ้างงาน");
         }
     };
 
@@ -216,13 +204,6 @@ export default function WCListingPage() {
                                                     <Link href={`/wc/${wc.id}`} className="inline-flex text-slate-400 hover:text-emerald-600 p-1.5 hover:bg-emerald-50 rounded-lg transition-colors border border-transparent" title="ดูรายละเอียด">
                                                         <Eye size={18} />
                                                     </Link>
-                                                    <button
-                                                        onClick={() => handleDelete(wc.id, wc.wcNumber)}
-                                                        className="inline-flex text-slate-400 hover:text-red-600 p-1.5 hover:bg-red-50 rounded-lg transition-colors border border-transparent"
-                                                        title="ลบเอกสาร"
-                                                    >
-                                                        <Trash2 size={18} />
-                                                    </button>
                                                 </div>
                                             </td>
                                         </tr>

@@ -165,17 +165,21 @@ export default function UsersPage() {
         });
     };
 
+    const formatCsvText = (val: string | undefined | null) => {
+        if (!val) return "";
+        return `\t${val}`; // Prefix with tab to force Excel to treat it as text
+    };
+
     const handleExportCsv = () => {
         const rows = users
             .slice()
             .sort((a, b) => (a.displayName || "").localeCompare(b.displayName || "", "th"))
             .map((user) => ([
-                user.uid,
                 user.email || "",
                 user.displayName || "",
                 user.role,
                 user.isActive,
-                user.phoneNumber || "",
+                formatCsvText(user.phoneNumber),
                 user.lineUserId || "",
                 user.lineProfilePic || "",
             ]));
@@ -183,7 +187,7 @@ export default function UsersPage() {
         const date = new Date().toISOString().slice(0, 10);
         downloadCsv(
             `users_${date}.csv`,
-            ["uid", "email", "display_name", "role", "is_active", "phone_number", "line_user_id", "line_profile_pic"],
+            ["อีเมล", "ชื่อแสดงผล", "สิทธิ์การใช้งาน", "สถานะ", "เบอร์โทรศัพท์", "line_id", "รูปโปรไฟล์_line"],
             rows
         );
     };
@@ -209,14 +213,14 @@ export default function UsersPage() {
             const dataRows = rows.slice(1);
             const findIndex = (candidates: string[]) => headers.findIndex((header) => candidates.some((candidate) => header.includes(candidate)));
 
-            const uidIndex = findIndex(["uid"]);
-            const emailIndex = findIndex(["email"]);
-            const displayNameIndex = findIndex(["displayname", "name"]);
-            const roleIndex = findIndex(["role"]);
-            const activeIndex = findIndex(["isactive", "active", "status"]);
-            const phoneIndex = findIndex(["phonenumber", "phone"]);
+            const uidIndex = findIndex(["uid", "รหัสผู้ใช้"]);
+            const emailIndex = findIndex(["email", "อีเมล"]);
+            const displayNameIndex = findIndex(["displayname", "name", "ชื่อแสดงผล", "ชื่อ"]);
+            const roleIndex = findIndex(["role", "สิทธิ์การใช้งาน", "สิทธิ์"]);
+            const activeIndex = findIndex(["isactive", "active", "status", "สถานะ"]);
+            const phoneIndex = findIndex(["phonenumber", "phone", "เบอร์โทรศัพท์", "เบอร์โทร"]);
             const lineUserIdIndex = findIndex(["lineuserid", "lineid"]);
-            const linePicIndex = findIndex(["lineprofilepic", "linepic"]);
+            const linePicIndex = findIndex(["lineprofilepic", "linepic", "รูปโปรไฟล์line"]);
 
             if (uidIndex < 0 && emailIndex < 0) {
                 alert("CSV must include uid or email column");

@@ -165,6 +165,11 @@ export default function CustomersPage() {
         });
     };
 
+    const formatCsvText = (val: string | undefined | null) => {
+        if (!val) return "";
+        return `\t${val}`; // Prefix with tab to force Excel to treat it as text
+    };
+
     const handleExportCsv = () => {
         const rows = customers
             .slice()
@@ -172,16 +177,16 @@ export default function CustomersPage() {
             .map((customer) => ([
                 customer.idCus || "",
                 customer.customerName || "",
-                customer.contactPhone || "",
+                formatCsvText(customer.contactPhone),
                 customer.officeAddress || customer.address || "",
-                customer.taxId || "",
+                formatCsvText(customer.taxId),
                 customer.isActive ?? true,
             ]));
 
         const date = new Date().toISOString().slice(0, 10);
         downloadCsv(
             `customers_${date}.csv`,
-            ["id_cus", "customer_name", "contact_phone", "office_address", "tax_id", "is_active"],
+            ["รหัสลูกค้า", "ชื่อลูกค้า", "เบอร์โทรติดต่อ", "ที่อยู่สำนักงาน", "เลขผู้เสียภาษี", "สถานะ"],
             rows
         );
     };
@@ -204,13 +209,13 @@ export default function CustomersPage() {
             const dataRows = rows.slice(1);
 
             const findIndex = (candidates: string[]) => headers.findIndex((header) => candidates.some((key) => header.includes(key)));
-            const idIndex = findIndex(["idcus", "idcustomer"]);
-            const nameIndex = findIndex(["customername", "name"]);
-            const contactPhoneIndex = findIndex(["contactphone", "phone"]);
-            const officeAddressIndex = findIndex(["officeaddress", "office"]);
-            const addressIndex = findIndex(["address"]);
-            const taxIdIndex = findIndex(["taxid"]);
-            const activeIndex = findIndex(["isactive", "active", "status"]);
+            const idIndex = findIndex(["idcus", "idcustomer", "รหัสลูกค้า"]);
+            const nameIndex = findIndex(["customername", "name", "ชื่อลูกค้า"]);
+            const contactPhoneIndex = findIndex(["contactphone", "phone", "เบอร์โทรติดต่อ", "เบอร์โทร"]);
+            const officeAddressIndex = findIndex(["officeaddress", "office", "ที่อยู่สำนักงาน"]);
+            const addressIndex = findIndex(["address", "ที่อยู่"]);
+            const taxIdIndex = findIndex(["taxid", "เลขผู้เสียภาษี"]);
+            const activeIndex = findIndex(["isactive", "active", "status", "สถานะ"]);
 
             if (nameIndex < 0) {
                 alert("CSV must include customer name column (for example: customer_name)");

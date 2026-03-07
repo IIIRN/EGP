@@ -21,7 +21,7 @@ export default function CreateVOPage() {
         { id: "1", description: "", quantity: 1, unit: "งาน", unitPrice: 0, amount: 0, type: "add" }
     ]);
 
-    const [vatRate, setVatRate] = useState(7);
+    const vatRate = 7;
     const [saving, setSaving] = useState(false);
     const [success, setSuccess] = useState(false);
 
@@ -32,7 +32,7 @@ export default function CreateVOPage() {
         ]);
     };
 
-    const handleItemChange = (id: string, field: keyof VOItem, value: any) => {
+    const handleItemChange = (id: string, field: keyof VOItem, value: string | number) => {
         const newItems = items.map(item => {
             if (item.id === id) {
                 const updated = { ...item, [field]: value };
@@ -162,10 +162,10 @@ export default function CreateVOPage() {
                     <button
                         onClick={() => handleSaveVO("pending")}
                         disabled={saving || success}
-                        className="inline-flex items-center justify-center rounded-lg bg-orange-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-orange-500 disabled:opacity-50 transition-colors"
+                        className="inline-flex items-center justify-center rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-blue-500 disabled:opacity-50 transition-colors"
                     >
                         {saving ? <Loader2 size={16} className="mr-2 animate-spin" /> : <Send size={16} className="mr-2" />}
-                        {success ? "สำเร็จ!" : "ส่งขออนุมัติดำเนินการ"}
+                        {success ? "สำเร็จ!" : "ส่งขออนุมัติ"}
                     </button>
                 </div>
             </div>
