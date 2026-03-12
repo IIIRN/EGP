@@ -117,10 +117,7 @@ export default function ProjectsPage() {
                                             <div className="text-sm text-slate-500">{project.location || "ไม่ได้ระบุสถานที่"}</div>
                                         </td>
                                         <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-500 font-mono">
-                                            {project.code}
-                                            {project.projectNo && (
-                                                <div className="text-xs text-slate-400 mt-0.5">No: {project.projectNo}</div>
-                                            )}
+                                            {project.code}
                                         </td>
                                         <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-900">
                                             {project.budget ? `฿${project.budget.toLocaleString()}` : "ไม่ได้กำหนด"}

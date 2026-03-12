@@ -6,7 +6,7 @@ import Link from "next/link";
 import { useState } from "react";
 import { VOItem } from "@/types/vo";
 import { useAuth } from "@/context/AuthContext";
-import { collection, addDoc, serverTimestamp } from "firebase/firestore";
+import { collection, addDoc, serverTimestamp, query, where, getDocs, orderBy, limit } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { useRouter } from "next/navigation";
 
@@ -73,7 +73,31 @@ export default function CreateVOPage() {
         setSaving(true);
 
         try {
-            const generateVoNumber = `VO-${new Date().getFullYear()}${(new Date().getMonth() + 1).toString().padStart(2, '0')}-${Math.floor(Math.random() * 100).toString().padStart(2, '0')}`;
+            const normalizedProjectCode = (currentProject.code || "")
+                .trim()
+                .toUpperCase()
+                .replace(/[^A-Z0-9]/g, "") || "PRJ";
+            const yearStr = new Date().getFullYear().toString();
+            const monthStr = (new Date().getMonth() + 1).toString().padStart(2, "0");
+            const prefix = `VO-${yearStr}${monthStr}-${normalizedProjectCode}-`;
+
+            let nextNum = 1;
+            const latestVoQuery = query(
+                collection(db, "variation_orders"),
+                where("voNumber", ">=", prefix),
+                where("voNumber", "<=", `${prefix}\uf8ff`),
+                orderBy("voNumber", "desc"),
+                limit(1)
+            );
+            const latestVoSnap = await getDocs(latestVoQuery);
+            if (!latestVoSnap.empty) {
+                const lastVoNumber = String(latestVoSnap.docs[0].data().voNumber || "");
+                const lastNum = Number.parseInt(lastVoNumber.substring(prefix.length), 10);
+                if (Number.isFinite(lastNum)) {
+                    nextNum = lastNum + 1;
+                }
+            }
+            const generateVoNumber = `${prefix}${String(nextNum).padStart(3, "0")}`;
 
             const newVO = {
                 voNumber: generateVoNumber,

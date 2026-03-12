@@ -90,10 +90,19 @@ export default function CreateWCPage() {
     // Auto-generate WC Number
     useEffect(() => {
         async function fetchNextWcNumber() {
+            const normalizedProjectCode = (currentProject?.code || "")
+                .trim()
+                .toUpperCase()
+                .replace(/[^A-Z0-9]/g, "");
+            if (!normalizedProjectCode) {
+                setWcNumber("");
+                return;
+            }
+
             const yearStr = new Date().getFullYear().toString();
             const monthStr = (new Date().getMonth() + 1).toString().padStart(2, '0');
             const typePrefix = wcType === 'project' ? 'P' : 'E';
-            const prefix = `WC-${yearStr}${monthStr}-${typePrefix}`;
+            const prefix = `WC-${yearStr}${monthStr}-${normalizedProjectCode}-${typePrefix}-`;
 
             try {
                 const q = query(
@@ -124,7 +133,7 @@ export default function CreateWCPage() {
         }
 
         fetchNextWcNumber();
-    }, [wcType]);
+    }, [wcType, currentProject?.code]);
 
     useEffect(() => {
         async function fetchVendors() {

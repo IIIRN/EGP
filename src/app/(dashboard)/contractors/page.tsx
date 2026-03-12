@@ -195,10 +195,32 @@ export default function ContractorsPage() {
             const headers = rows[0].map(normalizeHeader);
             const dataRows = rows.slice(1);
             const findIndex = (candidates: string[]) => headers.findIndex((header) => candidates.some((candidate) => header.includes(candidate)));
+            const findIndexByPriority = (
+                exactCandidates: string[],
+                containsCandidates: string[] = exactCandidates,
+                excludedIndexes: number[] = []
+            ) => {
+                const exactIndex = headers.findIndex(
+                    (header, index) => !excludedIndexes.includes(index) && exactCandidates.includes(header)
+                );
+                if (exactIndex >= 0) return exactIndex;
+                return headers.findIndex(
+                    (header, index) =>
+                        !excludedIndexes.includes(index) &&
+                        containsCandidates.some((candidate) => header.includes(candidate))
+                );
+            };
 
             const idIndex = findIndex(["idcontractor", "รหัสผู้รับเหมา"]);
-            const nicknameIndex = findIndex(["nickname", "ชื่อเล่น"]);
-            const fullNameIndex = findIndex(["fullname", "name", "ชื่อนามสกุล", "ชื่อ"]);
+            const nicknameIndex = findIndexByPriority(
+                ["nickname", "ชื่อเล่น"],
+                ["nickname", "ชื่อเล่น", "nick"]
+            );
+            const fullNameIndex = findIndexByPriority(
+                ["fullname", "name", "ชื่อนามสกุล", "ชื่อสกุล", "ชื่อจริง", "ชื่อ"],
+                ["fullname", "ชื่อนามสกุล", "ชื่อสกุล", "ชื่อจริง"],
+                nicknameIndex >= 0 ? [nicknameIndex] : []
+            );
             const bankAccountIndex = findIndex(["bankaccount", "เลขบัญชีธนาคาร", "เลขบัญชี"]);
             const bankCodeIndex = findIndex(["bankcode", "รหัสธนาคาร"]);
             const nationalIdIndex = findIndex(["nationalid", "idcard", "เลขบัตรประชาชน"]);

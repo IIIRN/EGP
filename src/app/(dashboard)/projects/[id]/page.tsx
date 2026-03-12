@@ -16,8 +16,7 @@ export default function EditProjectPage({ params }: { params: Promise<{ id: stri
     const [deleting, setDeleting] = useState(false);
 
     const [formData, setFormData] = useState({
-        name: "",
-        projectNo: "",
+        name: "",
         code: "",
         location: "",
         budget: "",
@@ -34,8 +33,7 @@ export default function EditProjectPage({ params }: { params: Promise<{ id: stri
                 if (docSnap.exists()) {
                     const data = docSnap.data();
                     setFormData({
-                        name: data.name || "",
-                        projectNo: data.projectNo || "",
+                        name: data.name || "",
                         code: data.code || "",
                         location: data.location || "",
                         budget: data.budget ? data.budget.toString() : "",
@@ -73,8 +71,7 @@ export default function EditProjectPage({ params }: { params: Promise<{ id: stri
         try {
             const projectRef = doc(db, "projects", resolvedParams.id);
             await updateDoc(projectRef, {
-                name: formData.name,
-                projectNo: formData.projectNo || "",
+                name: formData.name,
                 code: formData.code,
                 location: formData.location || "",
                 budget: formData.budget ? parseFloat(formData.budget) : 0,
@@ -165,18 +162,6 @@ export default function EditProjectPage({ params }: { params: Promise<{ id: stri
                                 value={formData.name}
                                 onChange={handleChange}
                                 placeholder="เช่น โครงการก่อสร้างอาคารชุดพักอาศัย A"
-                                className="w-full border border-slate-300 rounded-lg py-2 px-3 text-sm focus:ring-blue-500 focus:border-blue-500 bg-white"
-                            />
-                        </div>
-
-                        <div>
-                            <label className="block text-sm font-medium text-slate-700 mb-1">เลขที่โครงการ (Project No.)</label>
-                            <input
-                                type="text"
-                                name="projectNo"
-                                value={formData.projectNo}
-                                onChange={handleChange}
-                                placeholder="เช่น P-001 (ถ้าระบุ)"
                                 className="w-full border border-slate-300 rounded-lg py-2 px-3 text-sm focus:ring-blue-500 focus:border-blue-500 bg-white"
                             />
                         </div>

@@ -5,10 +5,10 @@ import { Suspense, useEffect, useMemo, useState } from "react";
 import { doc, getDoc, serverTimestamp, updateDoc } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { useRouter, useSearchParams } from "next/navigation";
-import { CheckCircle, Loader2, XCircle, FileText } from "lucide-react";
+import { CheckCircle, Loader2, XCircle } from "lucide-react";
 
 type PageState = "loading" | "review" | "success" | "error" | "unauthorized";
-type DocKind = "PO" | "VO";
+type DocKind = "PO" | "VO" | "WC";
 type Decision = "approved" | "rejected";
 
 type FirestoreTimestampLike = {
@@ -42,6 +42,27 @@ const formatMoney = (value: unknown) =>
         minimumFractionDigits: 2,
         maximumFractionDigits: 2,
     })}`;
+
+const DOC_KIND_COLLECTION: Record<DocKind, string> = {
+    PO: "purchase_orders",
+    VO: "variation_orders",
+    WC: "work_contracts",
+};
+
+function resolveDocKind(rawType: string): DocKind | null {
+    const normalized = rawType.trim().replace(/[\s-]+/g, "_").toUpperCase();
+    if (normalized === "PO" || normalized === "PURCHASE_ORDER" || normalized === "PURCHASE_ORDERS") return "PO";
+    if (normalized === "VO" || normalized === "VARIATION_ORDER" || normalized === "VARIATION_ORDERS") return "VO";
+    if (normalized === "WC" || normalized === "WORK_CONTRACT" || normalized === "WORK_CONTRACTS") return "WC";
+    return null;
+}
+
+function getDocKindLabel(docKind: DocKind | null): string {
+    if (docKind === "PO") return "ใบสั่งซื้อ (PO)";
+    if (docKind === "VO") return "งานเพิ่ม-ลด (VO)";
+    if (docKind === "WC") return "ใบจ้างงาน (WC)";
+    return "-";
+}
 
 function ApproveAction() {
     const { userProfile, loading: authLoading } = useAuth();
@@ -109,7 +130,7 @@ function ApproveAction() {
                 return;
             }
 
-            const type = (searchParams.get("type") || "").toUpperCase();
+            const type = searchParams.get("type") || "";
             const id = searchParams.get("id") || "";
 
             if (!type || !id) {
@@ -118,14 +139,14 @@ function ApproveAction() {
                 return;
             }
 
-            const kind = type === "PO" ? "PO" : type === "VO" ? "VO" : null;
+            const kind = resolveDocKind(type);
             if (!kind) {
                 setState("error");
-                setMessage("ประเภทเอกสารไม่ถูกต้อง");
+                setMessage("ประเภทเอกสารไม่ถูกต้อง (รองรับ PO, VO, WC)");
                 return;
             }
 
-            const collection = kind === "PO" ? "purchase_orders" : "variation_orders";
+            const collection = DOC_KIND_COLLECTION[kind];
             setDocKind(kind);
             setCollectionName(collection);
             setDocId(id);
@@ -156,7 +177,7 @@ function ApproveAction() {
                     setProjectName("-");
                 }
 
-                if (kind === "PO" && data.vendorId) {
+                if ((kind === "PO" || kind === "WC") && data.vendorId) {
                     const vSnap = await getDoc(doc(db, "vendors", data.vendorId));
                     setVendorData(vSnap.exists() ? vSnap.data() : null);
                 } else {
@@ -249,9 +270,9 @@ function ApproveAction() {
 
                         <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
                             <div className="grid grid-cols-1 gap-2 text-sm md:grid-cols-2">
-                                <p className="text-slate-600">ประเภทเอกสาร: <span className="font-medium text-slate-900">{docKind === "PO" ? "ใบสั่งซื้อ (PO)" : "งานเพิ่ม-ลด (VO)"}</span></p>
+                                <p className="text-slate-600">ประเภทเอกสาร: <span className="font-medium text-slate-900">{getDocKindLabel(docKind)}</span></p>
                                 <p className="text-slate-600">สถานะ: <span className="font-medium text-slate-900">{statusBadge}</span></p>
-                                <p className="text-slate-600">เลขที่เอกสาร: <span className="font-medium text-slate-900">{record?.poNumber || record?.voNumber || "-"}</span></p>
+                                <p className="text-slate-600">เลขที่เอกสาร: <span className="font-medium text-slate-900">{record?.poNumber || record?.voNumber || record?.wcNumber || "-"}</span></p>
                                 <p className="text-slate-600">โครงการ: <span className="font-medium text-slate-900">{projectName}</span></p>
                                 <p className="text-slate-600">วันที่สร้าง: <span className="font-medium text-slate-900">{formatDateThai(record?.createdAt)}</span></p>
                                 <p className="text-slate-600">ยอดรวม: <span className="font-medium text-slate-900">{formatMoney(record?.totalAmount)}</span></p>
@@ -260,6 +281,12 @@ function ApproveAction() {
                                 )}
                                 {docKind === "VO" && (
                                     <p className="text-slate-600 md:col-span-2">หัวข้อ: <span className="font-medium text-slate-900">{record?.title || "-"}</span></p>
+                                )}
+                                {docKind === "WC" && (
+                                    <>
+                                        <p className="text-slate-600 md:col-span-2">ผู้รับจ้าง: <span className="font-medium text-slate-900">{record?.vendorName || vendorData?.name || "-"}</span></p>
+                                        <p className="text-slate-600 md:col-span-2">หัวข้อ: <span className="font-medium text-slate-900">{record?.title || "-"}</span></p>
+                                    </>
                                 )}
                             </div>
                         </div>

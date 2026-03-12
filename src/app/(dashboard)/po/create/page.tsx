@@ -58,10 +58,19 @@ export default function CreatePOPage() {
 
     useEffect(() => {
         async function fetchNextPoNumber() {
+            const normalizedProjectCode = (currentProject?.code || "")
+                .trim()
+                .toUpperCase()
+                .replace(/[^A-Z0-9]/g, "");
+            if (!normalizedProjectCode) {
+                setPoNumber("");
+                return;
+            }
+
             const yearStr = new Date().getFullYear().toString();
             const monthStr = (new Date().getMonth() + 1).toString().padStart(2, '0');
             const typePrefix = poType === 'project' ? 'P' : 'O';
-            const prefix = `PO-${yearStr}${monthStr}-${typePrefix}`;
+            const prefix = `PO-${yearStr}${monthStr}-${normalizedProjectCode}-${typePrefix}-`;
 
             try {
                 const q = query(
@@ -94,7 +103,7 @@ export default function CreatePOPage() {
         }
 
         fetchNextPoNumber();
-    }, [poType]);
+    }, [poType, currentProject?.code]);
 
     // Vendor Search State
     const [searchVendor, setSearchVendor] = useState("");

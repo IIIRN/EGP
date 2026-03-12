@@ -13,7 +13,6 @@ export default function CreateProjectPage() {
 
     const [formData, setFormData] = useState({
         name: "",
-        projectNo: "",
         code: "",
         location: "",
         budget: "",
@@ -38,7 +37,6 @@ export default function CreateProjectPage() {
         try {
             const newProject = {
                 name: formData.name,
-                projectNo: formData.projectNo || "",
                 code: formData.code,
                 location: formData.location || "",
                 budget: formData.budget ? parseFloat(formData.budget) : 0,
@@ -95,18 +93,6 @@ export default function CreateProjectPage() {
                                 value={formData.name}
                                 onChange={handleChange}
                                 placeholder="เช่น โครงการก่อสร้างอาคารชุดพักอาศัย A"
-                                className="w-full border border-slate-300 rounded-lg py-2 px-3 text-sm focus:ring-blue-500 focus:border-blue-500 bg-white"
-                            />
-                        </div>
-
-                        <div>
-                            <label className="block text-sm font-medium text-slate-700 mb-1">เลขที่โครงการ (Project No.)</label>
-                            <input
-                                type="text"
-                                name="projectNo"
-                                value={formData.projectNo}
-                                onChange={handleChange}
-                                placeholder="เช่น P-001 (ถ้าระบุ)"
                                 className="w-full border border-slate-300 rounded-lg py-2 px-3 text-sm focus:ring-blue-500 focus:border-blue-500 bg-white"
                             />
                         </div>
