@@ -455,7 +455,11 @@ export async function POST(request: Request) {
 
         const liffId = process.env.NEXT_PUBLIC_LIFF_ID || "";
         const approveUrl = `https://liff.line.me/${liffId}/approve?type=${type}&id=${data?.id || ""}`;
+        const viewUrl = `https://liff.line.me/${liffId}/view?type=${type}&id=${data?.id || ""}`;
         const isPending = data?.status === "pending";
+        const isApproved = data?.status === "approved";
+        const actionUrl = isPending ? approveUrl : viewUrl;
+        const hasActionButton = (isPending || isApproved) && !!liffId;
 
         let altText = "แจ้งเตือนเอกสาร";
         let flexContents: any = {};
@@ -467,8 +471,8 @@ export async function POST(request: Request) {
                 projectName,
                 data,
                 vendorData,
-                approveUrl,
-                hasApproveButton: isPending && !!liffId,
+                approveUrl: actionUrl,
+                hasApproveButton: hasActionButton,
             });
         } else if (type === "VO") {
             const voNo = asText(data?.voNumber, "-");
@@ -477,8 +481,8 @@ export async function POST(request: Request) {
                 isPending,
                 projectName,
                 data,
-                approveUrl,
-                hasApproveButton: isPending && !!liffId,
+                approveUrl: actionUrl,
+                hasApproveButton: hasActionButton,
             });
         } else if (type === "WC") {
             const wcNo = asText(data?.wcNumber, "-");
@@ -488,8 +492,8 @@ export async function POST(request: Request) {
                 projectName,
                 data,
                 vendorData,
-                approveUrl,
-                hasApproveButton: isPending && !!liffId,
+                approveUrl: actionUrl,
+                hasApproveButton: hasActionButton,
             });
         } else {
             altText = `แจ้งเตือนเอกสาร - ${asText(type, "N/A")}`;
@@ -510,6 +514,14 @@ export async function POST(request: Request) {
                     body: { backgroundColor: "#ffffff" },
                 },
             };
+        }
+
+        if (isApproved && flexContents && typeof flexContents === "object") {
+            const bubble = flexContents as { footer?: { contents?: Array<{ type?: string; action?: { label?: string } }> } };
+            const primaryButton = bubble.footer?.contents?.find((item) => item?.type === "button");
+            if (primaryButton?.action) {
+                primaryButton.action.label = "ดูข้อมูลเอกสาร";
+            }
         }
 
         const failedTargets: { targetId: string; status: number; error: unknown; reason: string }[] = [];
