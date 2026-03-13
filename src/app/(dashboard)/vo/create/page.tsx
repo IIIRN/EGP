@@ -3,20 +3,25 @@
 import { useProject } from "@/context/ProjectContext";
 import { ArrowLeft, Save, Send, Plus, Loader2, FileEdit } from "lucide-react";
 import Link from "next/link";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { VOItem } from "@/types/vo";
 import { useAuth } from "@/context/AuthContext";
-import { collection, addDoc, serverTimestamp, query, where, getDocs, orderBy, limit } from "firebase/firestore";
+import { collection, addDoc, serverTimestamp, query, where, getDocs, orderBy, limit, Timestamp } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { useRouter } from "next/navigation";
+import { buildDocumentNumber, buildDocumentPrefix, normalizeProjectCode, parseDocumentSequence } from "@/lib/documentNumbers";
 
 export default function CreateVOPage() {
     const { currentProject } = useProject();
     const { user, userProfile } = useAuth();
     const router = useRouter();
+    const today = new Date().toISOString().slice(0, 10);
 
+    const [voNumber, setVoNumber] = useState("");
     const [title, setTitle] = useState("");
     const [reason, setReason] = useState("");
+    const [createdDate, setCreatedDate] = useState(today);
+    const [issueDate, setIssueDate] = useState(today);
     const [items, setItems] = useState<Partial<VOItem>[]>([
         { id: "1", description: "", quantity: 1, unit: "งาน", unitPrice: 0, amount: 0, type: "add" }
     ]);
@@ -60,6 +65,59 @@ export default function CreateVOPage() {
     const vatAmount = (subTotal * vatRate) / 100;
     const totalAmount = subTotal + vatAmount;
 
+    useEffect(() => {
+        async function fetchNextVoNumber() {
+            const normalizedProjectCode = normalizeProjectCode(currentProject?.code, "PRJ");
+            if (!normalizedProjectCode) {
+                setVoNumber("");
+                return;
+            }
+
+            const prefix = buildDocumentPrefix({
+                series: "VO",
+                projectCode: normalizedProjectCode,
+                typeCode: "P",
+            });
+
+            try {
+                const latestVoQuery = query(
+                    collection(db, "variation_orders"),
+                    where("voNumber", ">=", prefix),
+                    where("voNumber", "<=", `${prefix}\uf8ff`),
+                    orderBy("voNumber", "desc"),
+                    limit(1)
+                );
+                const latestVoSnap = await getDocs(latestVoQuery);
+
+                let nextNum = 1;
+                if (!latestVoSnap.empty) {
+                    const lastVoNumber = String(latestVoSnap.docs[0].data().voNumber || "");
+                    const lastNum = parseDocumentSequence(lastVoNumber, prefix);
+                    if (lastNum !== null) {
+                        nextNum = lastNum + 1;
+                    }
+                }
+
+                setVoNumber(buildDocumentNumber({
+                    series: "VO",
+                    projectCode: normalizedProjectCode,
+                    typeCode: "P",
+                    sequence: nextNum,
+                }));
+            } catch (error) {
+                console.error("Error generating VO Number:", error);
+                setVoNumber(buildDocumentNumber({
+                    series: "VO",
+                    projectCode: normalizedProjectCode,
+                    typeCode: "P",
+                    sequence: 1,
+                }));
+            }
+        }
+
+        fetchNextVoNumber();
+    }, [currentProject?.code]);
+
     const handleSaveVO = async (status: "draft" | "pending") => {
         if (!currentProject || (!user && !userProfile)) return;
 
@@ -70,38 +128,18 @@ export default function CreateVOPage() {
             return;
         }
 
+        if (!voNumber.trim()) {
+            alert("กรุณาระบุเลขที่ VO");
+            return;
+        }
+
         setSaving(true);
 
         try {
-            const normalizedProjectCode = (currentProject.code || "")
-                .trim()
-                .toUpperCase()
-                .replace(/[^A-Z0-9]/g, "") || "PRJ";
-            const yearStr = new Date().getFullYear().toString();
-            const monthStr = (new Date().getMonth() + 1).toString().padStart(2, "0");
-            const prefix = `VO-${yearStr}${monthStr}-${normalizedProjectCode}-`;
-
-            let nextNum = 1;
-            const latestVoQuery = query(
-                collection(db, "variation_orders"),
-                where("voNumber", ">=", prefix),
-                where("voNumber", "<=", `${prefix}\uf8ff`),
-                orderBy("voNumber", "desc"),
-                limit(1)
-            );
-            const latestVoSnap = await getDocs(latestVoQuery);
-            if (!latestVoSnap.empty) {
-                const lastVoNumber = String(latestVoSnap.docs[0].data().voNumber || "");
-                const lastNum = Number.parseInt(lastVoNumber.substring(prefix.length), 10);
-                if (Number.isFinite(lastNum)) {
-                    nextNum = lastNum + 1;
-                }
-            }
-            const generateVoNumber = `${prefix}${String(nextNum).padStart(3, "0")}`;
-
             const newVO = {
-                voNumber: generateVoNumber,
+                voNumber: voNumber.trim(),
                 projectId: currentProject.id,
+                issueDate,
                 title,
                 reason,
                 items: items as VOItem[],
@@ -111,7 +149,7 @@ export default function CreateVOPage() {
                 totalAmount,
                 status: status,
                 createdBy: creatorId,
-                createdAt: serverTimestamp(),
+                createdAt: Timestamp.fromDate(new Date(`${createdDate}T00:00:00`)),
                 updatedAt: serverTimestamp(),
             };
 
@@ -199,6 +237,37 @@ export default function CreateVOPage() {
 
                     {/* Section 1: General Info */}
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        <div>
+                            <label className="block text-sm font-medium text-slate-700 mb-1">เลขที่ VO <span className="text-red-500">*</span></label>
+                            <input
+                                type="text"
+                                value={voNumber}
+                                onChange={(e) => setVoNumber(e.target.value)}
+                                placeholder="VO403-202603-P001"
+                                className="w-full border border-slate-300 rounded-lg py-2 px-3 text-sm focus:ring-blue-500 focus:border-blue-500 bg-white"
+                            />
+                        </div>
+
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div>
+                                <label className="block text-sm font-medium text-slate-700 mb-1">วันที่สร้าง</label>
+                                <input
+                                    type="date"
+                                    value={createdDate}
+                                    onChange={(e) => setCreatedDate(e.target.value)}
+                                    className="w-full border border-slate-300 rounded-lg py-2 px-3 text-sm text-slate-600 focus:ring-blue-500 focus:border-blue-500 bg-white"
+                                />
+                            </div>
+                            <div>
+                                <label className="block text-sm font-medium text-slate-700 mb-1">วันที่ออกเอกสาร</label>
+                                <input
+                                    type="date"
+                                    value={issueDate}
+                                    onChange={(e) => setIssueDate(e.target.value)}
+                                    className="w-full border border-slate-300 rounded-lg py-2 px-3 text-sm text-slate-600 focus:ring-blue-500 focus:border-blue-500 bg-white"
+                                />
+                            </div>
+                        </div>
                         <div className="col-span-2 md:col-span-1">
                             <label className="block text-sm font-medium text-slate-700 mb-1">หัวข้องาน <span className="text-red-500">*</span></label>
                             <input

@@ -2,7 +2,7 @@
 
 import { use, useEffect, useState } from "react";
 import { useProject } from "@/context/ProjectContext";
-import { ArrowLeft, Save, Send, Plus, Loader2, Upload } from "lucide-react";
+import { ArrowLeft, Save, Send, Plus, Loader2, Upload, Search, ChevronDown } from "lucide-react";
 import Link from "next/link";
 import { WCItem, WorkContract } from "@/types/wc";
 import { useAuth } from "@/context/AuthContext";
@@ -21,6 +21,13 @@ type SignatureOption = {
 
 type CompanySettings = {
     signatures?: SignatureOption[];
+};
+
+type SystemConfig = {
+    companySettings?: CompanySettings;
+    itemUnits?: string[];
+    wcPaymentTermTemplates?: string[];
+    wcNoteTemplates?: string[];
 };
 
 type VatMode = "none" | "exclusive" | "inclusive";
@@ -70,7 +77,13 @@ export default function EditWCPage({ params }: { params: Promise<{ id: string }>
 
     const [companySettings, setCompanySettings] = useState<CompanySettings | null>(null);
     const [availableUnits, setAvailableUnits] = useState<string[]>([]);
+    const [paymentTermTemplates, setPaymentTermTemplates] = useState<string[]>([]);
+    const [noteTemplates, setNoteTemplates] = useState<string[]>([]);
     const [selectedSignatureId, setSelectedSignatureId] = useState("");
+    const [searchVendor, setSearchVendor] = useState("");
+    const [showVendorDropdown, setShowVendorDropdown] = useState(false);
+    const [selectedPaymentTermTemplate, setSelectedPaymentTermTemplate] = useState("");
+    const [selectedNoteTemplate, setSelectedNoteTemplate] = useState("");
 
     useEffect(() => {
         async function fetchVendors() {
@@ -141,11 +154,20 @@ export default function EditWCPage({ params }: { params: Promise<{ id: string }>
             try {
                 const configRef = doc(db, "system_settings", "global_config");
                 const configSnap = await getDoc(configRef);
-                if (configSnap.exists() && configSnap.data().companySettings) {
-                    setCompanySettings(configSnap.data().companySettings as CompanySettings);
-                }
-                if (configSnap.exists() && configSnap.data().itemUnits) {
-                    setAvailableUnits(configSnap.data().itemUnits);
+                if (configSnap.exists()) {
+                    const configData = configSnap.data() as SystemConfig;
+                    if (configData.companySettings) {
+                        setCompanySettings(configData.companySettings as CompanySettings);
+                    }
+                    if (configData.itemUnits) {
+                        setAvailableUnits(configData.itemUnits);
+                    }
+                    if (configData.wcPaymentTermTemplates) {
+                        setPaymentTermTemplates(configData.wcPaymentTermTemplates);
+                    }
+                    if (configData.wcNoteTemplates) {
+                        setNoteTemplates(configData.wcNoteTemplates);
+                    }
                 }
             } catch (error) {
                 console.error("Error fetching company settings:", error);
@@ -226,6 +248,20 @@ export default function EditWCPage({ params }: { params: Promise<{ id: string }>
 
     const normalizedProcessingFee = Math.max(0, Number(processingFee) || 0);
     const normalizedFuelFee = Math.max(0, Number(fuelFee) || 0);
+    const selectedVendor = vendors.find((v) => v.id === vendorId);
+    const filteredVendors = vendors
+        .filter((v): v is Contractor & { id: string } => Boolean(v.id))
+        .filter((v) => {
+            const term = searchVendor.trim().toLowerCase();
+            if (!term) return true;
+
+            return (
+                (v.fullName || "").toLowerCase().includes(term) ||
+                (v.nickname || "").toLowerCase().includes(term) ||
+                (v.idContractor || "").toLowerCase().includes(term) ||
+                (v.phone || "").toLowerCase().includes(term)
+            );
+        });
     const itemsTotalBeforeFee = items.reduce((sum, item) => sum + (item.amount || 0), 0);
     const extraFeeTotal = normalizedProcessingFee + normalizedFuelFee;
     const amountBeforeVat = itemsTotalBeforeFee + extraFeeTotal;
@@ -407,18 +443,58 @@ export default function EditWCPage({ params }: { params: Promise<{ id: string }>
                             />
                         </div>
 
-                        <div>
+                        <div className="relative">
                             <label className="block text-sm font-medium text-slate-700 mb-1">ผู้รับจ้าง <span className="text-red-500">*</span></label>
-                            <select
-                                value={vendorId}
-                                onChange={(e) => setVendorId(e.target.value)}
-                                className="w-full border border-slate-300 rounded-lg py-2 px-3 text-sm focus:ring-emerald-500 focus:border-emerald-500 bg-white"
+                            <div
+                                className="w-full border border-slate-300 rounded-lg py-2 px-3 text-sm flex justify-between items-center bg-white cursor-pointer hover:border-emerald-400 transition-colors"
+                                onClick={() => setShowVendorDropdown(!showVendorDropdown)}
                             >
-                                <option value="">เลือกผู้รับจ้าง...</option>
-                                {vendors.map(v => (
-                                    <option key={v.id} value={v.id}>{v.fullName} ({v.idContractor})</option>
-                                ))}
-                            </select>
+                                <span className={vendorId ? "text-slate-900 truncate" : "text-slate-400"}>
+                                    {vendorId ? (selectedVendor?.fullName || wc.vendorName) : "ค้นหาและเลือกผู้รับจ้าง..."}
+                                </span>
+                                <ChevronDown size={16} className={`text-slate-400 flex-shrink-0 ml-2 transition-transform duration-200 ${showVendorDropdown ? 'rotate-180' : ''}`} />
+                            </div>
+
+                            {showVendorDropdown && (
+                                <div className="absolute top-[68px] left-0 right-0 bg-white border border-slate-200 rounded-lg shadow-xl z-50 overflow-hidden">
+                                    <div className="p-2 border-b border-slate-100 bg-slate-50">
+                                        <div className="relative">
+                                            <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-slate-400" />
+                                            <input
+                                                type="text"
+                                                placeholder="ค้นหาชื่อ, ชื่อเล่น, รหัสลูกจ้าง หรือเบอร์โทร..."
+                                                className="w-full pl-8 pr-3 py-2 text-sm border border-slate-200 bg-white focus:ring-emerald-500 focus:border-emerald-500 rounded-md"
+                                                value={searchVendor}
+                                                onChange={(e) => setSearchVendor(e.target.value)}
+                                                autoFocus
+                                            />
+                                        </div>
+                                    </div>
+                                    <div className="max-h-64 overflow-y-auto">
+                                        {filteredVendors.length > 0 ? (
+                                            filteredVendors.map(v => (
+                                                <div
+                                                    key={v.id}
+                                                    className={`px-3 py-2.5 text-sm cursor-pointer border-b border-slate-50 last:border-0 hover:bg-emerald-50 transition-colors ${vendorId === v.id ? 'bg-emerald-50 text-emerald-600 font-semibold' : 'text-slate-700'}`}
+                                                    onClick={() => {
+                                                        setVendorId(v.id);
+                                                        setShowVendorDropdown(false);
+                                                        setSearchVendor("");
+                                                    }}
+                                                >
+                                                    <div className="font-medium text-slate-900">{v.fullName}</div>
+                                                    <div className="text-xs text-slate-500 mt-0.5">{v.nickname || "-"} | {v.idContractor}</div>
+                                                </div>
+                                            ))
+                                        ) : (
+                                            <div className="px-3 py-6 text-center text-sm text-slate-500">ไม่พบรายชื่อผู้รับจ้างนี้</div>
+                                        )}
+                                    </div>
+                                </div>
+                            )}
+                            {showVendorDropdown && (
+                                <div className="fixed inset-0 z-40" onClick={() => setShowVendorDropdown(false)} />
+                            )}
                         </div>
 
                         <div className="md:col-span-2">
@@ -468,20 +544,56 @@ export default function EditWCPage({ params }: { params: Promise<{ id: string }>
 
                         <div>
                             <label className="block text-sm font-medium text-slate-700 mb-1">เงื่อนไขการชำระเงิน / งวดงาน</label>
-                            <input
-                                type="text"
+                            {paymentTermTemplates.length > 0 && (
+                                <select
+                                    value={selectedPaymentTermTemplate}
+                                    onChange={(e) => {
+                                        const value = e.target.value;
+                                        setSelectedPaymentTermTemplate(value);
+                                        if (value) setPaymentTerms(value);
+                                    }}
+                                    className="w-full border border-slate-300 rounded-lg py-2 px-3 text-sm focus:ring-emerald-500 focus:border-emerald-500 bg-white mb-2"
+                                >
+                                    <option value="">เลือกจากแม่แบบที่บันทึกไว้</option>
+                                    {paymentTermTemplates.map((template) => (
+                                        <option key={template} value={template}>
+                                            {template}
+                                        </option>
+                                    ))}
+                                </select>
+                            )}
+                            <textarea
                                 value={paymentTerms}
                                 onChange={(e) => setPaymentTerms(e.target.value)}
+                                rows={3}
                                 className="w-full border border-slate-300 rounded-lg py-2 px-3 text-sm focus:ring-emerald-500 focus:border-emerald-500 bg-white"
                                 placeholder="เช่น งวดที่ 1 = 50%"
                             />
                         </div>
                         <div>
                             <label className="block text-sm font-medium text-slate-700 mb-1">หมายเหตุ</label>
-                            <input
-                                type="text"
+                            {noteTemplates.length > 0 && (
+                                <select
+                                    value={selectedNoteTemplate}
+                                    onChange={(e) => {
+                                        const value = e.target.value;
+                                        setSelectedNoteTemplate(value);
+                                        if (value) setNotes(value);
+                                    }}
+                                    className="w-full border border-slate-300 rounded-lg py-2 px-3 text-sm focus:ring-emerald-500 focus:border-emerald-500 bg-white mb-2"
+                                >
+                                    <option value="">เลือกจากแม่แบบที่บันทึกไว้</option>
+                                    {noteTemplates.map((template) => (
+                                        <option key={template} value={template}>
+                                            {template}
+                                        </option>
+                                    ))}
+                                </select>
+                            )}
+                            <textarea
                                 value={notes}
                                 onChange={(e) => setNotes(e.target.value)}
+                                rows={3}
                                 className="w-full border border-slate-300 rounded-lg py-2 px-3 text-sm focus:ring-emerald-500 focus:border-emerald-500 bg-white"
                                 placeholder="หมายเหตุ/ข้อกำหนดพิเศษ"
                             />

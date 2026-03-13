@@ -13,9 +13,37 @@ import liff from "@line/liff";
 
 interface POWithVendor extends PurchaseOrder {
     vendorPhone?: string;
+    vendorSecondaryPhone?: string;
     vendorMap?: string;
     vendorAddress?: string;
 }
+
+type FirestoreTimestampLike = {
+    toDate?: () => Date;
+    seconds?: number;
+};
+
+const formatShortDateThai = (value: unknown) => {
+    if (value && typeof value === "object") {
+        const ts = value as FirestoreTimestampLike;
+        if (typeof ts.toDate === "function") {
+            return ts.toDate().toLocaleDateString("th-TH", {
+                day: "2-digit",
+                month: "2-digit",
+                year: "2-digit",
+            });
+        }
+        if (typeof ts.seconds === "number") {
+            return new Date(ts.seconds * 1000).toLocaleDateString("th-TH", {
+                day: "2-digit",
+                month: "2-digit",
+                year: "2-digit",
+            });
+        }
+    }
+
+    return "-";
+};
 
 export default function LiffDashboard() {
     const { user, userProfile } = useAuth();
@@ -56,6 +84,8 @@ export default function LiffDashboard() {
         v.name.toLowerCase().includes(vendorSearch.toLowerCase()) ||
         (v.taxId && v.taxId.includes(vendorSearch)) ||
         (v.contactName && v.contactName.toLowerCase().includes(vendorSearch.toLowerCase())) ||
+        (v.phone && v.phone.includes(vendorSearch)) ||
+        (v.secondaryPhone && v.secondaryPhone.includes(vendorSearch)) ||
         (v.vendorTypes && v.vendorTypes.some(t => t.toLowerCase().includes(vendorSearch.toLowerCase())))
     );
     const visibleVendors = filteredVendors.slice(0, vendorLimit);
@@ -162,6 +192,7 @@ export default function LiffDashboard() {
                             const vData = vendorDoc.data();
                             vendorInfo = {
                                 vendorPhone: vData.phone,
+                                vendorSecondaryPhone: vData.secondaryPhone,
                                 vendorMap: vData.googleMapUrl,
                                 vendorAddress: vData.address
                             };
@@ -377,22 +408,30 @@ export default function LiffDashboard() {
                         <p className="text-sm font-bold text-slate-700 mb-1 line-clamp-1">{po.vendorName}</p>
                         <div className="flex justify-between items-end">
                             <p className="text-xs font-medium text-slate-400">ยอดรวม: <span className="text-slate-600 font-bold">฿{po.totalAmount?.toLocaleString()}</span></p>
-                            <span className="text-[10px] text-slate-300 font-medium">{(po.createdAt as any)?.toDate().toLocaleDateString('th-TH', { day: '2-digit', month: '2-digit', year: '2-digit' })}</span>
+                            <span className="text-[10px] text-slate-300 font-medium">{formatShortDateThai(po.createdAt)}</span>
                         </div>
 
-                        <div className="flex gap-2 mt-4">
+                        <div className="grid grid-cols-2 gap-2 mt-4">
                             <a
                                 href={po.vendorPhone ? `tel:${po.vendorPhone}` : '#'}
-                                className={`flex-1 flex justify-center items-center py-2.5 px-3 rounded-lg text-xs font-bold transition-colors ${po.vendorPhone ? 'bg-blue-50 text-blue-700 border border-blue-200 active:bg-blue-100' : 'bg-slate-50 text-slate-300 border border-slate-200 cursor-not-allowed'}`}
+                                className={`flex justify-center items-center py-2.5 px-3 rounded-lg text-xs font-bold transition-colors ${po.vendorPhone ? 'bg-blue-50 text-blue-700 border border-blue-200 active:bg-blue-100' : 'bg-slate-50 text-slate-300 border border-slate-200 cursor-not-allowed'}`}
                                 onClick={(e) => !po.vendorPhone && e.preventDefault()}
                             >
-                                <Phone size={14} className="mr-1.5" /> โทรออก
+                                <Phone size={14} className="mr-1.5" /> โทรหลัก
                             </a>
+                            {po.vendorSecondaryPhone && (
+                                <a
+                                    href={`tel:${po.vendorSecondaryPhone}`}
+                                    className="flex justify-center items-center py-2.5 px-3 rounded-lg text-xs font-bold transition-colors bg-emerald-50 text-emerald-700 border border-emerald-200 active:bg-emerald-100"
+                                >
+                                    <Phone size={14} className="mr-1.5" /> โทรสำรอง
+                                </a>
+                            )}
                             <a
                                 href={po.vendorMap || '#'}
                                 target="_blank"
                                 rel="noopener noreferrer"
-                                className={`flex-1 flex justify-center items-center py-2.5 px-3 rounded-lg text-xs font-bold transition-colors ${po.vendorMap ? 'bg-blue-50 text-blue-700 border border-blue-200 active:bg-blue-100' : 'bg-slate-50 text-slate-300 border border-slate-200 cursor-not-allowed'}`}
+                                className={`flex justify-center items-center py-2.5 px-3 rounded-lg text-xs font-bold transition-colors ${po.vendorMap ? 'bg-blue-50 text-blue-700 border border-blue-200 active:bg-blue-100' : 'bg-slate-50 text-slate-300 border border-slate-200 cursor-not-allowed'}`}
                                 onClick={(e) => !po.vendorMap && e.preventDefault()}
                             >
                                 <MapPin size={14} className="mr-1.5" /> แผนที่
@@ -401,7 +440,7 @@ export default function LiffDashboard() {
                                 <button
                                     onClick={() => handleMarkCompleted(po.id)}
                                     disabled={actionLoadingId === po.id}
-                                    className="flex-1 flex justify-center items-center py-2.5 px-3 rounded-lg text-xs font-bold transition-colors bg-purple-50 text-purple-700 border border-purple-200 active:bg-purple-100 disabled:opacity-50"
+                                    className="col-span-2 flex justify-center items-center py-2.5 px-3 rounded-lg text-xs font-bold transition-colors bg-purple-50 text-purple-700 border border-purple-200 active:bg-purple-100 disabled:opacity-50"
                                 >
                                     {actionLoadingId === po.id ? <Loader2 size={14} className="mr-1.5 animate-spin" /> : <CheckCircle size={14} className="mr-1.5" />}
                                     จัดเก็บ
@@ -409,9 +448,9 @@ export default function LiffDashboard() {
                             )}
                             <Link
                                 href={`/liff/po/${po.id}`}
-                                className="w-12 flex justify-center items-center py-2.5 rounded-lg bg-slate-900 text-white active:bg-slate-800 transition-colors font-bold shrink-0"
+                                className="flex justify-center items-center py-2.5 px-3 rounded-lg bg-slate-900 text-white active:bg-slate-800 transition-colors font-bold text-xs"
                             >
-                                <ChevronRight size={18} />
+                                <ChevronRight size={16} className="mr-1.5" /> รายละเอียด
                             </Link>
                         </div>
                     </div>
@@ -474,20 +513,32 @@ export default function LiffDashboard() {
                             </div>
                         )}
                         <p className="text-sm font-medium text-slate-700 mb-1">ติดต่อ: {v.contactName}</p>
+                        <div className="space-y-1 text-xs text-slate-500">
+                            <p>หลัก: {v.phone || "ไม่มีเบอร์"}</p>
+                            {v.secondaryPhone && <p>สำรอง: {v.secondaryPhone}</p>}
+                        </div>
 
-                        <div className="flex gap-2 mt-4">
+                        <div className="grid grid-cols-2 gap-2 mt-4">
                             <a
                                 href={v.phone ? `tel:${v.phone}` : '#'}
-                                className={`flex-1 flex justify-center items-center py-2 px-3 rounded-lg text-sm font-semibold transition-colors ${v.phone ? 'bg-blue-50 text-blue-700 border border-blue-200 hover:bg-blue-100' : 'bg-slate-50 text-slate-400 border border-slate-200 cursor-not-allowed'}`}
+                                className={`flex justify-center items-center py-2 px-3 rounded-lg text-sm font-semibold transition-colors ${v.phone ? 'bg-blue-50 text-blue-700 border border-blue-200 hover:bg-blue-100' : 'bg-slate-50 text-slate-400 border border-slate-200 cursor-not-allowed'}`}
                                 onClick={(e) => !v.phone && e.preventDefault()}
                             >
-                                <Phone size={14} className="mr-1.5" /> {v.phone || "ไม่มีเบอร์"}
+                                <Phone size={14} className="mr-1.5" /> โทรหลัก
                             </a>
+                            {v.secondaryPhone && (
+                                <a
+                                    href={`tel:${v.secondaryPhone}`}
+                                    className="flex justify-center items-center py-2 px-3 rounded-lg text-sm font-semibold transition-colors bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100"
+                                >
+                                    <Phone size={14} className="mr-1.5" /> โทรสำรอง
+                                </a>
+                            )}
                             <a
                                 href={v.googleMapUrl || '#'}
                                 target="_blank"
                                 rel="noopener noreferrer"
-                                className={`flex-1 flex justify-center items-center py-2 px-3 rounded-lg text-sm font-semibold transition-colors ${v.googleMapUrl ? 'bg-blue-50 text-blue-700 border border-blue-200 hover:bg-blue-100' : 'bg-slate-50 text-slate-400 border border-slate-200 cursor-not-allowed'}`}
+                                className={`flex justify-center items-center py-2 px-3 rounded-lg text-sm font-semibold transition-colors ${v.googleMapUrl ? 'bg-blue-50 text-blue-700 border border-blue-200 hover:bg-blue-100' : 'bg-slate-50 text-slate-400 border border-slate-200 cursor-not-allowed'}`}
                                 onClick={(e) => !v.googleMapUrl && e.preventDefault()}
                             >
                                 <MapPin size={14} className="mr-1.5" /> แผนที่ร้าน

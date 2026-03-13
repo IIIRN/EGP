@@ -21,6 +21,7 @@ export default function EditVendorPage({ params }: { params: Promise<{ id: strin
         taxId: "",
         contactName: "",
         phone: "",
+        secondaryPhone: "",
         email: "",
         address: "",
         googleMapUrl: "",
@@ -217,6 +218,18 @@ export default function EditVendorPage({ params }: { params: Promise<{ id: strin
                                 value={formData.phone || ""}
                                 onChange={handleChange}
                                 placeholder="เช่น 081-xxx-xxxx"
+                                className="w-full border border-slate-300 rounded-lg py-2 px-3 text-sm focus:ring-blue-500 focus:border-blue-500 bg-white"
+                            />
+                        </div>
+
+                        <div>
+                            <label className="block text-sm font-medium text-slate-700 mb-1">เบอร์ติดต่อสำรอง</label>
+                            <input
+                                type="text"
+                                name="secondaryPhone"
+                                value={formData.secondaryPhone || ""}
+                                onChange={handleChange}
+                                placeholder="เช่น 089-xxx-xxxx"
                                 className="w-full border border-slate-300 rounded-lg py-2 px-3 text-sm focus:ring-blue-500 focus:border-blue-500 bg-white"
                             />
                         </div>

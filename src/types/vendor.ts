@@ -6,6 +6,7 @@ export interface Vendor {
     vatMode?: "none" | "exclusive" | "inclusive";
     contactName: string;
     phone: string;
+    secondaryPhone?: string;
     email?: string;
     address?: string;
     googleMapUrl?: string; // Link to Google Maps

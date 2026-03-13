@@ -48,7 +48,7 @@ export default function ProjectSelector() {
                             โครงการปัจจุบัน
                         </span>
                         <span className="text-xs md:text-sm font-semibold text-slate-900 truncate w-full">
-                            {currentProject?.name || "เลือกโครงการ"}
+                            {currentProject?.code ? `${currentProject.code} - ${currentProject.name}` : (currentProject?.name || "เลือกโครงการ")}
                         </span>
                     </div>
                 </div>

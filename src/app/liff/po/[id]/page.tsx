@@ -20,6 +20,7 @@ import {
 import { doc, getDoc, updateDoc, serverTimestamp } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { PurchaseOrder } from "@/types/po";
+import { Vendor } from "@/types/vendor";
 import { useAuth } from "@/context/AuthContext";
 import { useProject } from "@/context/ProjectContext";
 import { splitProcessingFeeItem } from "@/lib/documentItems";
@@ -64,7 +65,7 @@ export default function LiffPODetailPage({ params }: { params: Promise<{ id: str
     const [po, setPo] = useState<PurchaseOrder | null>(null);
     const [loading, setLoading] = useState(true);
     const [actionLoading, setActionLoading] = useState(false);
-    const [vendorData, setVendorData] = useState<any>(null);
+    const [vendorData, setVendorData] = useState<Vendor | null>(null);
 
     useEffect(() => {
         async function fetchPO() {
@@ -79,7 +80,7 @@ export default function LiffPODetailPage({ params }: { params: Promise<{ id: str
 
                     if (data.vendorId) {
                         const vSnap = await getDoc(doc(db, "vendors", data.vendorId));
-                        if (vSnap.exists()) setVendorData(vSnap.data());
+                        if (vSnap.exists()) setVendorData(vSnap.data() as Vendor);
                     }
                 }
             } catch (error) {
@@ -263,14 +264,24 @@ export default function LiffPODetailPage({ params }: { params: Promise<{ id: str
                         <a
                             href={vendorData.phone ? `tel:${vendorData.phone}` : "#"}
                             className={`inline-flex items-center justify-center rounded-md border px-3 py-2.5 text-sm font-medium ${vendorData.phone ? "border-emerald-300 bg-emerald-50 text-emerald-700" : "border-slate-200 bg-slate-100 text-slate-400"}`}
+                            onClick={(e) => !vendorData.phone && e.preventDefault()}
                         >
-                            <Phone size={15} className="mr-2" /> โทรหาคู่ค้า
+                            <Phone size={15} className="mr-2" /> โทรหลัก
                         </a>
+                        {vendorData.secondaryPhone ? (
+                            <a
+                                href={`tel:${vendorData.secondaryPhone}`}
+                                className="inline-flex items-center justify-center rounded-md border border-emerald-300 bg-emerald-50 px-3 py-2.5 text-sm font-medium text-emerald-700"
+                            >
+                                <Phone size={15} className="mr-2" /> โทรสำรอง
+                            </a>
+                        ) : null}
                         <a
                             href={vendorData.googleMapUrl || "#"}
                             target="_blank"
                             rel="noopener noreferrer"
                             className={`inline-flex items-center justify-center rounded-md border px-3 py-2.5 text-sm font-medium ${vendorData.googleMapUrl ? "border-blue-300 bg-blue-50 text-blue-700" : "border-slate-200 bg-slate-100 text-slate-400"}`}
+                            onClick={(e) => !vendorData.googleMapUrl && e.preventDefault()}
                         >
                             <MapPin size={15} className="mr-2" /> แผนที่ร้าน
                         </a>

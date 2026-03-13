@@ -6,7 +6,7 @@ import { ArrowLeft, Save, Send, Plus, Loader2, FileEdit } from "lucide-react";
 import Link from "next/link";
 import { VOItem, VariationOrder } from "@/types/vo";
 import { useAuth } from "@/context/AuthContext";
-import { doc, getDoc, updateDoc, serverTimestamp } from "firebase/firestore";
+import { doc, getDoc, updateDoc, serverTimestamp, Timestamp } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { useRouter } from "next/navigation";
 
@@ -19,8 +19,12 @@ export default function EditVOPage({ params }: { params: Promise<{ id: string }>
     const [vo, setVo] = useState<VariationOrder | null>(null);
     const [loading, setLoading] = useState(true);
 
+    const today = new Date().toISOString().slice(0, 10);
+    const [voNumber, setVoNumber] = useState("");
     const [title, setTitle] = useState("");
     const [reason, setReason] = useState("");
+    const [createdDate, setCreatedDate] = useState(today);
+    const [issueDate, setIssueDate] = useState(today);
     const [items, setItems] = useState<Partial<VOItem>[]>([
         { id: "1", description: "", quantity: 1, unit: "งาน", unitPrice: 0, amount: 0, type: "add" }
     ]);
@@ -47,8 +51,11 @@ export default function EditVOPage({ params }: { params: Promise<{ id: string }>
                     }
 
                     setVo(data);
+                    setVoNumber(data.voNumber || "");
                     setTitle(data.title || "");
                     setReason(data.reason || "");
+                    setCreatedDate(formatDateForInput(data.createdAt) || today);
+                    setIssueDate(data.issueDate || formatDateForInput(data.createdAt) || today);
                     setVatRate(data.vatRate || 7);
 
                     if (data.items && data.items.length > 0) {
@@ -71,7 +78,7 @@ export default function EditVOPage({ params }: { params: Promise<{ id: string }>
         } else {
             setLoading(false); // If no project, the project check condition will render the warning.
         }
-    }, [resolvedParams.id, router, currentProject]);
+    }, [resolvedParams.id, router, currentProject, today]);
 
     const handleAddItem = () => {
         setItems([
@@ -108,6 +115,33 @@ export default function EditVOPage({ params }: { params: Promise<{ id: string }>
     const vatAmount = (subTotal * vatRate) / 100;
     const totalAmount = subTotal + vatAmount;
 
+    const formatDateForInput = (value: unknown) => {
+        try {
+            if (value && typeof value === "object" && "toDate" in value) {
+                const timestamp = value as { toDate?: () => Date };
+                if (typeof timestamp.toDate === "function") {
+                    return timestamp.toDate().toISOString().slice(0, 10);
+                }
+            }
+            if (value && typeof value === "object" && "seconds" in value) {
+                const unixTimestamp = value as { seconds?: number; nanoseconds?: number };
+                if (typeof unixTimestamp.seconds === "number") {
+                    const millis = (unixTimestamp.seconds * 1000) + Math.floor((unixTimestamp.nanoseconds ?? 0) / 1_000_000);
+                    return new Date(millis).toISOString().slice(0, 10);
+                }
+            }
+            if (typeof value === "string" || typeof value === "number" || value instanceof Date) {
+                const date = new Date(value);
+                if (!Number.isNaN(date.getTime())) {
+                    return date.toISOString().slice(0, 10);
+                }
+            }
+        } catch {
+            return "";
+        }
+        return "";
+    };
+
     const formatCreatedAt = (value: unknown) => {
         try {
             if (value && typeof value === "object" && "toDate" in value) {
@@ -143,6 +177,11 @@ export default function EditVOPage({ params }: { params: Promise<{ id: string }>
             return;
         }
 
+        if (!voNumber.trim()) {
+            alert("กรุณาระบุเลขที่ VO");
+            return;
+        }
+
         setSaving(true);
 
         try {
@@ -157,6 +196,8 @@ export default function EditVOPage({ params }: { params: Promise<{ id: string }>
             }));
 
             const updatedVO = {
+                voNumber: voNumber.trim(),
+                issueDate,
                 title,
                 reason,
                 items: sanitizedItems as VOItem[],
@@ -165,6 +206,7 @@ export default function EditVOPage({ params }: { params: Promise<{ id: string }>
                 vatAmount,
                 totalAmount,
                 status: status,
+                createdAt: Timestamp.fromDate(new Date(`${createdDate}T00:00:00`)),
                 updatedAt: serverTimestamp(),
             };
 
@@ -177,7 +219,7 @@ export default function EditVOPage({ params }: { params: Promise<{ id: string }>
                         headers: { "Content-Type": "application/json" },
                         body: JSON.stringify({
                             type: "VO",
-                            data: { ...updatedVO, id: resolvedParams.id, voNumber: vo?.voNumber || "N/A" },
+                            data: { ...updatedVO, id: resolvedParams.id, voNumber: voNumber.trim() || vo?.voNumber || "N/A" },
                             projectName: currentProject.name,
                         }),
                     });
@@ -264,6 +306,17 @@ export default function EditVOPage({ params }: { params: Promise<{ id: string }>
                     {/* Section 1: General Info */}
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                         <div className="col-span-2 md:col-span-1">
+                            <label className="block text-sm font-medium text-slate-700 mb-1">เลขที่ VO <span className="text-red-500">*</span></label>
+                            <input
+                                type="text"
+                                value={voNumber}
+                                onChange={(e) => setVoNumber(e.target.value)}
+                                placeholder="VO403-202603-P001"
+                                className="w-full border border-slate-300 rounded-lg py-2 px-3 text-sm focus:ring-blue-500 focus:border-blue-500 bg-white"
+                            />
+                        </div>
+
+                        <div className="col-span-2 md:col-span-1">
                             <label className="block text-sm font-medium text-slate-700 mb-1">หัวข้องาน <span className="text-red-500">*</span></label>
                             <input
                                 type="text"
@@ -276,12 +329,23 @@ export default function EditVOPage({ params }: { params: Promise<{ id: string }>
 
                         <div className="col-span-2 md:col-span-1 grid grid-cols-2 gap-4">
                             <div>
-                                <label className="block text-sm font-medium text-slate-700 mb-1">เลขที่เอกสาร</label>
-                                <input type="text" disabled value={vo.voNumber} className="w-full border border-slate-200 bg-slate-50 rounded-lg py-2 px-3 text-sm text-slate-500 cursor-not-allowed" />
+                                <label className="block text-sm font-medium text-slate-700 mb-1">วันที่สร้าง</label>
+                                <input
+                                    type="date"
+                                    value={createdDate}
+                                    onChange={(e) => setCreatedDate(e.target.value)}
+                                    className="w-full border border-slate-300 rounded-lg py-2 px-3 text-sm text-slate-600 focus:ring-blue-500 focus:border-blue-500 bg-white"
+                                />
+                                <p className="mt-1 text-xs text-slate-500">ค่าเดิม: {formatCreatedAt(vo.createdAt)}</p>
                             </div>
                             <div>
-                                <label className="block text-sm font-medium text-slate-700 mb-1">วันที่สร้าง (ไม่สามารถเปลี่ยนได้)</label>
-                                <input type="text" disabled value={formatCreatedAt(vo.createdAt)} className="w-full border border-slate-200 bg-slate-50 rounded-lg py-2 px-3 text-sm text-slate-500 cursor-not-allowed" />
+                                <label className="block text-sm font-medium text-slate-700 mb-1">วันที่ออกเอกสาร</label>
+                                <input
+                                    type="date"
+                                    value={issueDate}
+                                    onChange={(e) => setIssueDate(e.target.value)}
+                                    className="w-full border border-slate-300 rounded-lg py-2 px-3 text-sm text-slate-600 focus:ring-blue-500 focus:border-blue-500 bg-white"
+                                />
                             </div>
                         </div>
 

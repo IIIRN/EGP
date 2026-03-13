@@ -9,6 +9,7 @@ import { useAuth } from "@/context/AuthContext";
 import { collection, addDoc, serverTimestamp, query, where, getDocs, orderBy, limit } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { useRouter } from "next/navigation";
+import { buildDocumentNumber, buildDocumentPrefix, normalizeProjectCode, parseDocumentSequence } from "@/lib/documentNumbers";
 
 export default function LiffCreateVOPage() {
     const { currentProject } = useProject();
@@ -21,7 +22,7 @@ export default function LiffCreateVOPage() {
         { id: "1", description: "", quantity: 1, unit: "งาน", unitPrice: 0, amount: 0, type: "add" }
     ]);
 
-    const [vatRate, setVatRate] = useState(7);
+    const vatRate = 7;
     const [saving, setSaving] = useState(false);
     const [success, setSuccess] = useState(false);
 
@@ -32,7 +33,7 @@ export default function LiffCreateVOPage() {
         ]);
     };
 
-    const handleItemChange = (id: string, field: keyof VOItem, value: any) => {
+    const handleItemChange = (id: string, field: keyof VOItem, value: string | number) => {
         const newItems = items.map(item => {
             if (item.id === id) {
                 const updated = { ...item, [field]: value };
@@ -71,13 +72,12 @@ export default function LiffCreateVOPage() {
         setSaving(true);
 
         try {
-            const normalizedProjectCode = (currentProject.code || "")
-                .trim()
-                .toUpperCase()
-                .replace(/[^A-Z0-9]/g, "") || "PRJ";
-            const yearStr = new Date().getFullYear().toString();
-            const monthStr = (new Date().getMonth() + 1).toString().padStart(2, "0");
-            const prefix = `VO-${yearStr}${monthStr}-${normalizedProjectCode}-`;
+            const normalizedProjectCode = normalizeProjectCode(currentProject.code, "PRJ");
+            const prefix = buildDocumentPrefix({
+                series: "VO",
+                projectCode: normalizedProjectCode,
+                typeCode: "P",
+            });
 
             let nextNum = 1;
             const latestVoQuery = query(
@@ -90,12 +90,17 @@ export default function LiffCreateVOPage() {
             const latestVoSnap = await getDocs(latestVoQuery);
             if (!latestVoSnap.empty) {
                 const lastVoNumber = String(latestVoSnap.docs[0].data().voNumber || "");
-                const lastNum = Number.parseInt(lastVoNumber.substring(prefix.length), 10);
-                if (Number.isFinite(lastNum)) {
+                const lastNum = parseDocumentSequence(lastVoNumber, prefix);
+                if (lastNum !== null) {
                     nextNum = lastNum + 1;
                 }
             }
-            const generateVoNumber = `${prefix}${String(nextNum).padStart(3, "0")}`;
+            const generateVoNumber = buildDocumentNumber({
+                series: "VO",
+                projectCode: normalizedProjectCode,
+                typeCode: "P",
+                sequence: nextNum,
+            });
 
             const newVO = {
                 voNumber: generateVoNumber,

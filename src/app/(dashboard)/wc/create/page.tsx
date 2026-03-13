@@ -11,6 +11,7 @@ import { db } from "@/lib/firebase";
 import { useRouter } from "next/navigation";
 import { Contractor } from "@/types/contractor";
 import { parseDocumentItemsCsv, PROCESSING_FEE_LABEL, FUEL_FEE_LABEL } from "@/lib/documentItems";
+import { buildDocumentNumber, buildDocumentPrefix, normalizeProjectCode, parseDocumentSequence } from "@/lib/documentNumbers";
 
 type SignatureOption = {
     id: string;
@@ -21,6 +22,13 @@ type SignatureOption = {
 
 type CompanySettings = {
     signatures?: SignatureOption[];
+};
+
+type SystemConfig = {
+    companySettings?: CompanySettings;
+    itemUnits?: string[];
+    wcPaymentTermTemplates?: string[];
+    wcNoteTemplates?: string[];
 };
 
 type VatMode = "none" | "exclusive" | "inclusive";
@@ -67,7 +75,11 @@ export default function CreateWCPage() {
     const [notes, setNotes] = useState("");
     const [companySettings, setCompanySettings] = useState<CompanySettings | null>(null);
     const [availableUnits, setAvailableUnits] = useState<string[]>([]);
+    const [paymentTermTemplates, setPaymentTermTemplates] = useState<string[]>([]);
+    const [noteTemplates, setNoteTemplates] = useState<string[]>([]);
     const [selectedSignatureId, setSelectedSignatureId] = useState("");
+    const [selectedPaymentTermTemplate, setSelectedPaymentTermTemplate] = useState("");
+    const [selectedNoteTemplate, setSelectedNoteTemplate] = useState("");
 
     // Vendor Search
     const [searchVendor, setSearchVendor] = useState("");
@@ -90,19 +102,18 @@ export default function CreateWCPage() {
     // Auto-generate WC Number
     useEffect(() => {
         async function fetchNextWcNumber() {
-            const normalizedProjectCode = (currentProject?.code || "")
-                .trim()
-                .toUpperCase()
-                .replace(/[^A-Z0-9]/g, "");
+            const normalizedProjectCode = normalizeProjectCode(currentProject?.code);
             if (!normalizedProjectCode) {
                 setWcNumber("");
                 return;
             }
 
-            const yearStr = new Date().getFullYear().toString();
-            const monthStr = (new Date().getMonth() + 1).toString().padStart(2, '0');
             const typePrefix = wcType === 'project' ? 'P' : 'E';
-            const prefix = `WC-${yearStr}${monthStr}-${normalizedProjectCode}-${typePrefix}-`;
+            const prefix = buildDocumentPrefix({
+                series: "WC",
+                projectCode: normalizedProjectCode,
+                typeCode: typePrefix,
+            });
 
             try {
                 const q = query(
@@ -119,16 +130,25 @@ export default function CreateWCPage() {
                 if (!snapshot.empty) {
                     const lastWc = snapshot.docs[0].data();
                     if (lastWc.wcNumber) {
-                        const lastNumStr = lastWc.wcNumber.substring(prefix.length);
-                        const lastNum = parseInt(lastNumStr, 10);
-                        if (!isNaN(lastNum)) nextNum = lastNum + 1;
+                        const lastNum = parseDocumentSequence(String(lastWc.wcNumber), prefix);
+                        if (lastNum !== null) nextNum = lastNum + 1;
                     }
                 }
 
-                setWcNumber(`${prefix}${nextNum.toString().padStart(3, '0')}`);
+                setWcNumber(buildDocumentNumber({
+                    series: "WC",
+                    projectCode: normalizedProjectCode,
+                    typeCode: typePrefix,
+                    sequence: nextNum,
+                }));
             } catch (error) {
                 console.error("Error generating WC Number:", error);
-                setWcNumber(`${prefix}001`);
+                setWcNumber(buildDocumentNumber({
+                    series: "WC",
+                    projectCode: normalizedProjectCode,
+                    typeCode: typePrefix,
+                    sequence: 1,
+                }));
             }
         }
 
@@ -154,14 +174,23 @@ export default function CreateWCPage() {
             try {
                 const configRef = doc(db, "system_settings", "global_config");
                 const configSnap = await getDoc(configRef);
-                if (configSnap.exists() && configSnap.data().companySettings) {
-                    const settings = configSnap.data().companySettings as CompanySettings;
-                    setCompanySettings(settings);
-                    if (settings.signatures && settings.signatures.length > 0) {
-                        setSelectedSignatureId(settings.signatures[0].id);
+                if (configSnap.exists()) {
+                    const configData = configSnap.data() as SystemConfig;
+                    if (configData.companySettings) {
+                        const settings = configData.companySettings as CompanySettings;
+                        setCompanySettings(settings);
+                        if (settings.signatures && settings.signatures.length > 0) {
+                            setSelectedSignatureId(settings.signatures[0].id);
+                        }
                     }
-                    if (configSnap.data().itemUnits) {
-                        setAvailableUnits(configSnap.data().itemUnits);
+                    if (configData.itemUnits) {
+                        setAvailableUnits(configData.itemUnits);
+                    }
+                    if (configData.wcPaymentTermTemplates) {
+                        setPaymentTermTemplates(configData.wcPaymentTermTemplates);
+                    }
+                    if (configData.wcNoteTemplates) {
+                        setNoteTemplates(configData.wcNoteTemplates);
                     }
                 }
             } catch (error) {
@@ -465,7 +494,7 @@ export default function CreateWCPage() {
                                 value={wcNumber}
                                 onChange={(e) => setWcNumber(e.target.value)}
                                 className="w-full border border-slate-300 rounded-lg py-2 px-3 text-sm focus:ring-emerald-500 focus:border-emerald-500 bg-white"
-                                placeholder="WC-YYYYMM-P001"
+                                placeholder="WC403-202603-P001"
                             />
                         </div>
 
@@ -585,20 +614,56 @@ export default function CreateWCPage() {
                         {/* เงื่อนไขการจ่ายและหมายเหตุ */}
                         <div>
                             <label className="block text-sm font-medium text-slate-700 mb-1">เงื่อนไขการชำระเงิน / งวดงาน</label>
-                            <input
-                                type="text"
+                            {paymentTermTemplates.length > 0 && (
+                                <select
+                                    value={selectedPaymentTermTemplate}
+                                    onChange={(e) => {
+                                        const value = e.target.value;
+                                        setSelectedPaymentTermTemplate(value);
+                                        if (value) setPaymentTerms(value);
+                                    }}
+                                    className="w-full border border-slate-300 rounded-lg py-2 px-3 text-sm focus:ring-emerald-500 focus:border-emerald-500 bg-white mb-2"
+                                >
+                                    <option value="">เลือกจากแม่แบบที่บันทึกไว้</option>
+                                    {paymentTermTemplates.map((template) => (
+                                        <option key={template} value={template}>
+                                            {template}
+                                        </option>
+                                    ))}
+                                </select>
+                            )}
+                            <textarea
                                 value={paymentTerms}
                                 onChange={(e) => setPaymentTerms(e.target.value)}
+                                rows={3}
                                 className="w-full border border-slate-300 rounded-lg py-2 px-3 text-sm focus:ring-emerald-500 focus:border-emerald-500 bg-white"
                                 placeholder="เช่น งวดที่ 1 = 30%, งวดที่ 2 = 70%"
                             />
                         </div>
                         <div>
                             <label className="block text-sm font-medium text-slate-700 mb-1">หมายเหตุ / ข้อกำหนดพิเศษ</label>
-                            <input
-                                type="text"
+                            {noteTemplates.length > 0 && (
+                                <select
+                                    value={selectedNoteTemplate}
+                                    onChange={(e) => {
+                                        const value = e.target.value;
+                                        setSelectedNoteTemplate(value);
+                                        if (value) setNotes(value);
+                                    }}
+                                    className="w-full border border-slate-300 rounded-lg py-2 px-3 text-sm focus:ring-emerald-500 focus:border-emerald-500 bg-white mb-2"
+                                >
+                                    <option value="">เลือกจากแม่แบบที่บันทึกไว้</option>
+                                    {noteTemplates.map((template) => (
+                                        <option key={template} value={template}>
+                                            {template}
+                                        </option>
+                                    ))}
+                                </select>
+                            )}
+                            <textarea
                                 value={notes}
                                 onChange={(e) => setNotes(e.target.value)}
+                                rows={3}
                                 className="w-full border border-slate-300 rounded-lg py-2 px-3 text-sm focus:ring-emerald-500 focus:border-emerald-500 bg-white"
                                 placeholder="หมายเหตุเพิ่มเติม (ถ้ามี)"
                             />

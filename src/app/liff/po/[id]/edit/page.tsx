@@ -394,7 +394,7 @@ export default function EditPOPage({ params }: { params: Promise<{ id: string }>
                                 value={poNumber}
                                 onChange={(e) => setPoNumber(e.target.value)}
                                 className="w-full border border-slate-300 rounded-lg py-2 px-3 text-sm focus:ring-blue-500 focus:border-blue-500 bg-white"
-                                placeholder="PO-XXXXXX-XXX"
+                                placeholder="PO403-202603-P001"
                             />
                         </div>
 
@@ -736,6 +736,5 @@ export default function EditPOPage({ params }: { params: Promise<{ id: string }>
         </div>
     );
 }
-
 
 

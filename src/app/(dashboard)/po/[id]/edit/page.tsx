@@ -2,7 +2,7 @@
 
 import { use, useEffect, useState } from "react";
 import { useProject } from "@/context/ProjectContext";
-import { ArrowLeft, Save, Send, Plus, Loader2, Upload } from "lucide-react";
+import { ArrowLeft, Save, Send, Plus, Loader2, Upload, Search, ChevronDown } from "lucide-react";
 import Link from "next/link";
 import { POItem, PurchaseOrder } from "@/types/po";
 import { useAuth } from "@/context/AuthContext";
@@ -56,6 +56,8 @@ export default function EditPOPage({ params }: { params: Promise<{ id: string }>
     const [companySettings, setCompanySettings] = useState<CompanySettings | null>(null);
     const [availableUnits, setAvailableUnits] = useState<string[]>([]);
     const [selectedSignatureId, setSelectedSignatureId] = useState("");
+    const [searchVendor, setSearchVendor] = useState("");
+    const [showVendorDropdown, setShowVendorDropdown] = useState(false);
 
     useEffect(() => {
         async function fetchVendors() {
@@ -215,6 +217,11 @@ export default function EditPOPage({ params }: { params: Promise<{ id: string }>
 
     const normalizedProcessingFee = po?.poType === 'extra' ? 0 : Math.max(0, Number(processingFee) || 0);
     const itemsTotalBeforeFee = items.reduce((sum, item) => sum + (item.amount || 0), 0);
+    const selectedVendor = vendors.find(v => v.id === vendorId);
+    const filteredVendors = vendors.filter(v =>
+        v.name.toLowerCase().includes(searchVendor.toLowerCase()) ||
+        (v.taxId && v.taxId.includes(searchVendor))
+    );
 
     const formatCreatedAt = (value: unknown) => {
         if (value && typeof value === "object" && "toDate" in value) {
@@ -367,22 +374,67 @@ export default function EditPOPage({ params }: { params: Promise<{ id: string }>
                                 value={poNumber}
                                 onChange={(e) => setPoNumber(e.target.value)}
                                 className="w-full border border-slate-300 rounded-lg py-2 px-3 text-sm focus:ring-blue-500 focus:border-blue-500 bg-white"
-                                placeholder="PO-XXXXXX-XXX"
+                                placeholder="PO403-202603-P001"
                             />
                         </div>
 
-                        <div>
+                        <div className="relative">
                             <label className="block text-sm font-medium text-slate-700 mb-1">ผู้ขาย / คู่ค้า <span className="text-red-500">*</span></label>
-                            <select
-                                value={vendorId}
-                                onChange={(e) => setVendorId(e.target.value)}
-                                className="w-full border border-slate-300 rounded-lg py-2 px-3 text-sm focus:ring-blue-500 focus:border-blue-500 bg-white"
+                            <div
+                                className="w-full border border-slate-300 rounded-lg py-2 px-3 text-sm flex justify-between items-center bg-white cursor-pointer hover:border-blue-400 transition-colors"
+                                onClick={() => setShowVendorDropdown(!showVendorDropdown)}
                             >
-                                <option value="">เลือกผู้ขาย...</option>
-                                {vendors.map(v => (
-                                    <option key={v.id} value={v.id}>{v.name}</option>
-                                ))}
-                            </select>
+                                <span className={vendorId ? "text-slate-900 truncate" : "text-slate-400"}>
+                                    {vendorId ? (selectedVendor?.name || po.vendorName) : "ค้นหาและเลือกผู้ขาย..."}
+                                </span>
+                                <ChevronDown size={16} className={`text-slate-400 flex-shrink-0 ml-2 transition-transform duration-200 ${showVendorDropdown ? 'rotate-180' : ''}`} />
+                            </div>
+
+                            {showVendorDropdown && (
+                                <div className="absolute top-[68px] left-0 right-0 bg-white border border-slate-200 rounded-lg shadow-xl z-50 overflow-hidden">
+                                    <div className="p-2 border-b border-slate-100 bg-slate-50">
+                                        <div className="relative">
+                                            <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-slate-400" />
+                                            <input
+                                                type="text"
+                                                placeholder="พิมพ์ค้นหาชื่อ หรือเลขผู้เสียภาษี..."
+                                                className="w-full pl-8 pr-3 py-2 text-sm border border-slate-200 bg-white focus:ring-blue-500 focus:border-blue-500 rounded-md"
+                                                value={searchVendor}
+                                                onChange={(e) => setSearchVendor(e.target.value)}
+                                                autoFocus
+                                            />
+                                        </div>
+                                    </div>
+                                    <div className="max-h-64 overflow-y-auto">
+                                        {filteredVendors.length > 0 ? (
+                                            filteredVendors.map(v => (
+                                                <div
+                                                    key={v.id}
+                                                    className={`px-3 py-2.5 text-sm cursor-pointer border-b border-slate-50 last:border-0 hover:bg-blue-50 transition-colors ${vendorId === v.id ? 'bg-blue-50 text-blue-600 font-semibold' : 'text-slate-700'}`}
+                                                    onClick={() => {
+                                                        setVendorId(v.id);
+                                                        setShowVendorDropdown(false);
+                                                        setSearchVendor("");
+                                                    }}
+                                                >
+                                                    {v.name}
+                                                </div>
+                                            ))
+                                        ) : (
+                                            <div className="px-3 py-6 text-center text-sm text-slate-500">
+                                                ไม่พบรายชื่อผู้ขายนี้
+                                            </div>
+                                        )}
+                                    </div>
+                                </div>
+                            )}
+
+                            {showVendorDropdown && (
+                                <div
+                                    className="fixed inset-0 z-40"
+                                    onClick={() => setShowVendorDropdown(false)}
+                                />
+                            )}
                         </div>
 
                         <div className="md:col-span-2 grid grid-cols-1 md:grid-cols-3 gap-4 mt-2">

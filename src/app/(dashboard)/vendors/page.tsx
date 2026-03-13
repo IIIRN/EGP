@@ -69,6 +69,7 @@ export default function VendorsPage() {
             (vendor.taxId || "").toLowerCase().includes(term) ||
             (vendor.contactName || "").toLowerCase().includes(term) ||
             (vendor.phone || "").toLowerCase().includes(term) ||
+            (vendor.secondaryPhone || "").toLowerCase().includes(term) ||
             (vendor.email || "").toLowerCase().includes(term) ||
             (vendor.address || "").toLowerCase().includes(term)
         );
@@ -162,6 +163,7 @@ export default function VendorsPage() {
                 formatCsvText(vendor.taxId),
                 vendor.contactName || "",
                 formatCsvText(vendor.phone),
+                formatCsvText(vendor.secondaryPhone),
                 vendor.email || "",
                 vendor.address || "",
                 vendor.googleMapUrl || "",
@@ -172,7 +174,7 @@ export default function VendorsPage() {
         const date = new Date().toISOString().slice(0, 10);
         downloadCsv(
             `vendors_${date}.csv`,
-            ["ชื่อร้านค้า", "เลขผู้เสียภาษี", "ชื่อผู้ติดต่อ", "เบอร์โทรศัพท์", "อีเมล", "ที่อยู่", "ลิงก์แผนที่", "สถานะ", "ประเภทสินค้า"],
+            ["ชื่อร้านค้า", "เลขผู้เสียภาษี", "ชื่อผู้ติดต่อ", "เบอร์โทรศัพท์", "เบอร์ติดต่อสำรอง", "อีเมล", "ที่อยู่", "ลิงก์แผนที่", "สถานะ", "ประเภทสินค้า"],
             rows
         );
     };
@@ -198,6 +200,7 @@ export default function VendorsPage() {
             const taxIdIndex = findIndex(["taxid", "เลขผู้เสียภาษี"]);
             const contactNameIndex = findIndex(["contactname", "ชื่อผู้ติดต่อ"]);
             const phoneIndex = findIndex(["phone", "เบอร์โทรศัพท์", "เบอร์โทร"]);
+            const secondaryPhoneIndex = findIndex(["secondaryphone", "backupphone", "altphone", "เบอร์ติดต่อสำรอง", "เบอร์สำรอง"]);
             const emailIndex = findIndex(["email", "อีเมล"]);
             const addressIndex = findIndex(["address", "ที่อยู่"]);
             const mapIndex = findIndex(["googlemapurl", "mapurl", "maps", "ลิงก์แผนที่", "แผนที่"]);
@@ -241,6 +244,7 @@ export default function VendorsPage() {
                     taxId: rawTaxId || existing?.taxId || "-",
                     contactName: contactNameIndex >= 0 ? ((row[contactNameIndex] || "").trim() || existing?.contactName || "-") : (existing?.contactName || "-"),
                     phone: phoneIndex >= 0 ? ((row[phoneIndex] || "").trim() || existing?.phone || "-") : (existing?.phone || "-"),
+                    secondaryPhone: secondaryPhoneIndex >= 0 ? ((row[secondaryPhoneIndex] || "").trim() || existing?.secondaryPhone || "") : (existing?.secondaryPhone || ""),
                     email: emailIndex >= 0 ? ((row[emailIndex] || "").trim() || existing?.email || "") : (existing?.email || ""),
                     address: addressIndex >= 0 ? ((row[addressIndex] || "").trim() || existing?.address || "-") : (existing?.address || "-"),
                     googleMapUrl: mapIndex >= 0 ? ((row[mapIndex] || "").trim() || existing?.googleMapUrl || "") : (existing?.googleMapUrl || ""),
@@ -450,6 +454,7 @@ export default function VendorsPage() {
                                                 </td>
                                                 <td className="px-6 py-4 whitespace-nowrap">
                                                     <div className="text-sm text-slate-900 mt-1">Phone: {vendor.phone || "-"}</div>
+                                                    {vendor.secondaryPhone && <div className="text-sm text-slate-500">Backup: {vendor.secondaryPhone}</div>}
                                                     <div className="text-sm text-slate-500">Contact: {vendor.contactName || "-"}</div>
                                                 </td>
                                                 <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-500 font-mono">{vendor.taxId || "-"}</td>

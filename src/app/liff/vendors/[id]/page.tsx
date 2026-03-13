@@ -20,6 +20,7 @@ export default function EditLiffVendorPage({ params }: { params: Promise<{ id: s
         taxId: "",
         contactName: "",
         phone: "",
+        secondaryPhone: "",
         email: "",
         address: "",
         googleMapUrl: "",
@@ -49,6 +50,7 @@ export default function EditLiffVendorPage({ params }: { params: Promise<{ id: s
                     taxId: vendor.taxId || "",
                     contactName: vendor.contactName || "",
                     phone: vendor.phone || "",
+                    secondaryPhone: vendor.secondaryPhone || "",
                     email: vendor.email || "",
                     address: vendor.address || "",
                     googleMapUrl: vendor.googleMapUrl || "",
@@ -104,6 +106,7 @@ export default function EditLiffVendorPage({ params }: { params: Promise<{ id: s
                 taxId: formData.taxId || "",
                 contactName: formData.contactName || "",
                 phone: formData.phone || "",
+                secondaryPhone: formData.secondaryPhone || "",
                 email: formData.email || "",
                 address: formData.address || "",
                 googleMapUrl: formData.googleMapUrl || "",
@@ -256,6 +259,18 @@ export default function EditLiffVendorPage({ params }: { params: Promise<{ id: s
                                     value={formData.phone || ""}
                                     onChange={handleChange}
                                     placeholder="เช่น 081-xxx-xxxx"
+                                    className="w-full border border-slate-300 rounded-md py-2.5 px-3 text-sm focus:ring-blue-500 focus:border-blue-500 bg-white"
+                                />
+                            </div>
+
+                            <div>
+                                <label className="block text-sm font-medium text-slate-700 mb-1.5">เบอร์ติดต่อสำรอง</label>
+                                <input
+                                    type="text"
+                                    name="secondaryPhone"
+                                    value={formData.secondaryPhone || ""}
+                                    onChange={handleChange}
+                                    placeholder="เช่น 089-xxx-xxxx"
                                     className="w-full border border-slate-300 rounded-md py-2.5 px-3 text-sm focus:ring-blue-500 focus:border-blue-500 bg-white"
                                 />
                             </div>

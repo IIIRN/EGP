@@ -27,7 +27,6 @@ export default function Header({ toggleSidebar }: HeaderProps) {
                 <ProjectSelector />
             </div>
 
-            {/* Right section: placeholder */}
             <div></div>
 
         </header>

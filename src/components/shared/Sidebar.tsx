@@ -20,7 +20,7 @@ import {
     User,
     LogOut,
     LineChart,
-    Briefcase
+    Briefcase,
 } from "lucide-react";
 
 const mainNavigation = [
@@ -77,67 +77,95 @@ export default function Sidebar({ isOpen = false, setIsOpen }: SidebarProps) {
 
     const translatedRole = () => {
         switch (userProfile?.role) {
-            case "admin": return "ผู้ดูแลระบบ";
-            case "procurement": return "ฝ่ายจัดซื้อ";
-            case "pm": return "ผู้จัดการโครงการ";
-            case "engineer": return "วิศวกร";
-            default: return "พนักงาน";
+            case "admin":
+                return "ผู้ดูแลระบบ";
+            case "procurement":
+                return "ฝ่ายจัดซื้อ";
+            case "pm":
+                return "ผู้จัดการโครงการ";
+            case "engineer":
+                return "วิศวกร";
+            default:
+                return "พนักงาน";
         }
-    }
+    };
+
+    const topLevelItemClass = (isActive: boolean) =>
+        clsx(
+            "group flex items-center px-3.5 py-3 text-sm font-medium rounded-2xl border transition-all duration-200",
+            isActive
+                ? "border-white/10 bg-gradient-to-r from-blue-500/24 via-blue-400/14 to-white/[0.03] text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.08),0_10px_30px_rgba(37,99,235,0.18)]"
+                : "border-transparent text-slate-300/90 hover:border-white/6 hover:bg-white/[0.045] hover:text-white",
+        );
+
+    const topLevelIconClass = (isActive: boolean) =>
+        clsx(
+            "mr-3 h-5 w-5 flex-shrink-0 transition-colors",
+            isActive ? "text-blue-100" : "text-slate-400 group-hover:text-slate-200",
+        );
+
+    const submenuItemClass = (isActive: boolean) =>
+        clsx(
+            "group flex items-center px-3 py-2.5 text-sm font-medium rounded-xl border transition-all duration-200",
+            isActive
+                ? "border-white/8 bg-white/[0.06] text-blue-200 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]"
+                : "border-transparent text-slate-300/85 hover:border-white/6 hover:bg-white/[0.04] hover:text-white",
+        );
+
+    const submenuIconClass = (isActive: boolean) =>
+        clsx(
+            "mr-3 h-4 w-4 flex-shrink-0 transition-colors",
+            isActive ? "text-blue-200" : "text-slate-500 group-hover:text-slate-300",
+        );
 
     return (
         <>
-            {/* Mobile Overlay */}
             {isOpen && (
                 <div
-                    className="fixed inset-0 bg-slate-900/50 z-40 lg:hidden backdrop-blur-sm transition-opacity"
+                    className="fixed inset-0 z-40 bg-slate-900/50 backdrop-blur-sm transition-opacity lg:hidden"
                     onClick={closeSidebar}
                 />
             )}
 
-            {/* Sidebar Content */}
-            <div className={clsx(
-                "fixed inset-y-0 left-0 z-50 flex flex-col w-64 bg-slate-900 border-r border-slate-800 text-white shadow-xl transition-transform duration-300 ease-in-out lg:static lg:translate-x-0 print:hidden",
-                isOpen ? "translate-x-0" : "-translate-x-full"
-            )}>
-                {/* Logo Area */}
-                <div className="h-16 flex items-center justify-between px-6 border-b border-slate-800">
+            <div
+                className={clsx(
+                    "fixed inset-y-0 left-0 z-50 flex w-64 flex-col overflow-hidden border-r border-white/8 bg-[linear-gradient(180deg,#0f172a_0%,#0b1328_38%,#0b1831_100%)] text-white shadow-[0_24px_80px_rgba(2,6,23,0.55)] transition-transform duration-300 ease-in-out lg:static lg:translate-x-0 print:hidden",
+                    isOpen ? "translate-x-0" : "-translate-x-full",
+                )}
+            >
+                <div className="pointer-events-none absolute inset-0">
+                    <div className="absolute -left-16 top-0 h-40 w-40 rounded-full bg-blue-500/10 blur-3xl" />
+                    <div className="absolute right-0 top-1/3 h-48 w-48 rounded-full bg-cyan-400/5 blur-3xl" />
+                    <div className="absolute bottom-0 left-8 h-32 w-32 rounded-full bg-emerald-400/5 blur-3xl" />
+                </div>
+
+                <div className="relative flex h-16 items-center justify-between border-b border-white/8 bg-white/[0.025] px-6 backdrop-blur-sm">
                     <div className="flex items-center">
-                        <span className="ml-3 text-lg font-bold tracking-wider text-slate-100"><span className="text-green-500">Powertec</span> จัดซื้อ-จ้าง</span>
+                        <span className="ml-3 text-lg font-bold tracking-[0.02em] text-white">
+                            <span className="text-emerald-400">Powertec</span>{" "}
+                            <span className="text-slate-200">จัดซื้อ-จ้าง</span>
+                        </span>
                     </div>
-                    {/* Close button for mobile */}
                     <button
-                        className="lg:hidden text-slate-400 hover:text-white p-1"
+                        className="rounded-full p-1.5 text-slate-400 hover:bg-white/5 hover:text-white lg:hidden"
                         onClick={closeSidebar}
                     >
                         <X size={20} />
                     </button>
                 </div>
 
-                {/* Navigation */}
-                <div className="flex-1 overflow-y-auto py-6">
-                    <nav className="px-3 space-y-1">
+                <div className="sidebar-scroll relative flex-1 overflow-y-auto py-6">
+                    <nav className="space-y-1.5 px-3.5">
                         {mainNavigation.map((item) => {
                             const isActive = pathname.startsWith(item.href);
                             return (
                                 <Link
                                     key={item.name}
                                     href={item.href}
-                                    className={clsx(
-                                        "group flex items-center px-3 py-3 text-sm font-medium rounded-lg transition-colors",
-                                        isActive
-                                            ? "bg-blue-600 text-white shadow-sm"
-                                            : "text-slate-300 hover:bg-slate-800 hover:text-white"
-                                    )}
+                                    className={topLevelItemClass(isActive)}
                                     onClick={handleNavigate}
                                 >
-                                    <item.icon
-                                        className={clsx(
-                                            "mr-3 h-5 w-5 flex-shrink-0 transition-colors",
-                                            isActive ? "text-white" : "text-slate-400 group-hover:text-slate-300"
-                                        )}
-                                        aria-hidden="true"
-                                    />
+                                    <item.icon className={topLevelIconClass(isActive)} aria-hidden="true" />
                                     {item.name}
                                 </Link>
                             );
@@ -147,48 +175,27 @@ export default function Sidebar({ isOpen = false, setIsOpen }: SidebarProps) {
                             <button
                                 type="button"
                                 onClick={() => setIsDocumentSubmenuOpen((prev) => !prev)}
-                                className={clsx(
-                                    "w-full group flex items-center justify-between px-3 py-3 text-sm font-medium rounded-lg transition-colors",
-                                    documentSubmenuActive
-                                        ? "bg-blue-600 text-white shadow-sm"
-                                        : "text-slate-300 hover:bg-slate-800 hover:text-white"
-                                )}
+                                className={clsx(topLevelItemClass(documentSubmenuActive), "w-full justify-between")}
                             >
                                 <span className="flex items-center">
-                                    <FileText
-                                        className={clsx(
-                                            "mr-3 h-5 w-5 flex-shrink-0 transition-colors",
-                                            documentSubmenuActive ? "text-white" : "text-slate-400 group-hover:text-slate-300"
-                                        )}
-                                    />
+                                    <FileText className={topLevelIconClass(documentSubmenuActive)} />
                                     การสร้างเอกสาร
                                 </span>
                                 {isDocumentSubmenuOpen ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
                             </button>
 
                             {isDocumentSubmenuOpen && (
-                                <div className="mt-1 ml-4 pl-3 border-l border-slate-800 space-y-1">
+                                <div className="mt-2 ml-5 space-y-1.5 border-l border-white/8 pl-3">
                                     {documentNavigation.map((item) => {
                                         const isActive = pathname.startsWith(item.href);
                                         return (
                                             <Link
                                                 key={item.name}
                                                 href={item.href}
-                                                className={clsx(
-                                                    "group flex items-center px-3 py-2.5 text-sm font-medium rounded-lg transition-colors",
-                                                    isActive
-                                                        ? "bg-blue-500/15 text-blue-400"
-                                                        : "text-slate-300 hover:bg-slate-800 hover:text-white"
-                                                )}
+                                                className={submenuItemClass(isActive)}
                                                 onClick={handleNavigate}
                                             >
-                                                <item.icon
-                                                    className={clsx(
-                                                        "mr-3 h-4 w-4 flex-shrink-0 transition-colors",
-                                                        isActive ? "text-blue-400" : "text-slate-400 group-hover:text-slate-300"
-                                                    )}
-                                                    aria-hidden="true"
-                                                />
+                                                <item.icon className={submenuIconClass(isActive)} aria-hidden="true" />
                                                 {item.name}
                                             </Link>
                                         );
@@ -201,48 +208,27 @@ export default function Sidebar({ isOpen = false, setIsOpen }: SidebarProps) {
                             <button
                                 type="button"
                                 onClick={() => setIsSubmenuOpen((prev) => !prev)}
-                                className={clsx(
-                                    "w-full group flex items-center justify-between px-3 py-3 text-sm font-medium rounded-lg transition-colors",
-                                    submenuActive
-                                        ? "bg-blue-600 text-white shadow-sm"
-                                        : "text-slate-300 hover:bg-slate-800 hover:text-white"
-                                )}
+                                className={clsx(topLevelItemClass(submenuActive), "w-full justify-between")}
                             >
                                 <span className="flex items-center">
-                                    <Users
-                                        className={clsx(
-                                            "mr-3 h-5 w-5 flex-shrink-0 transition-colors",
-                                            submenuActive ? "text-white" : "text-slate-400 group-hover:text-slate-300"
-                                        )}
-                                    />
+                                    <Users className={topLevelIconClass(submenuActive)} />
                                     บุคคลและคู่ค้า
                                 </span>
                                 {isSubmenuOpen ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
                             </button>
 
                             {isSubmenuOpen && (
-                                <div className="mt-1 ml-4 pl-3 border-l border-slate-800 space-y-1">
+                                <div className="mt-2 ml-5 space-y-1.5 border-l border-white/8 pl-3">
                                     {peopleAndPartnersNavigation.map((item) => {
                                         const isActive = pathname.startsWith(item.href);
                                         return (
                                             <Link
                                                 key={item.name}
                                                 href={item.href}
-                                                className={clsx(
-                                                    "group flex items-center px-3 py-2.5 text-sm font-medium rounded-lg transition-colors",
-                                                    isActive
-                                                        ? "bg-blue-500/15 text-blue-400"
-                                                        : "text-slate-300 hover:bg-slate-800 hover:text-white"
-                                                )}
+                                                className={submenuItemClass(isActive)}
                                                 onClick={handleNavigate}
                                             >
-                                                <item.icon
-                                                    className={clsx(
-                                                        "mr-3 h-4 w-4 flex-shrink-0 transition-colors",
-                                                        isActive ? "text-blue-400" : "text-slate-400 group-hover:text-slate-300"
-                                                    )}
-                                                    aria-hidden="true"
-                                                />
+                                                <item.icon className={submenuIconClass(isActive)} aria-hidden="true" />
                                                 {item.name}
                                             </Link>
                                         );
@@ -257,21 +243,10 @@ export default function Sidebar({ isOpen = false, setIsOpen }: SidebarProps) {
                                 <Link
                                     key={item.name}
                                     href={item.href}
-                                    className={clsx(
-                                        "group flex items-center px-3 py-3 text-sm font-medium rounded-lg transition-colors",
-                                        isActive
-                                            ? "bg-blue-600 text-white shadow-sm"
-                                            : "text-slate-300 hover:bg-slate-800 hover:text-white"
-                                    )}
+                                    className={topLevelItemClass(isActive)}
                                     onClick={handleNavigate}
                                 >
-                                    <item.icon
-                                        className={clsx(
-                                            "mr-3 h-5 w-5 flex-shrink-0 transition-colors",
-                                            isActive ? "text-white" : "text-slate-400 group-hover:text-slate-300"
-                                        )}
-                                        aria-hidden="true"
-                                    />
+                                    <item.icon className={topLevelIconClass(isActive)} aria-hidden="true" />
                                     {item.name}
                                 </Link>
                             );
@@ -279,30 +254,66 @@ export default function Sidebar({ isOpen = false, setIsOpen }: SidebarProps) {
                     </nav>
                 </div>
 
-                {/* Footer Area inside sidebar */}
-                <div className="p-4 border-t border-slate-800 mt-auto space-y-3">
-                    <div className="flex items-center space-x-3 px-2">
-                        <div className="w-10 h-10 bg-slate-800 rounded-full flex items-center justify-center text-slate-300 shrink-0">
+                <div className="relative mt-auto border-t border-white/8 bg-white/[0.03] p-4 backdrop-blur-sm">
+                    <div className="flex items-center space-x-3 rounded-2xl border border-white/6 bg-white/[0.035] px-3 py-3">
+                        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl border border-white/8 bg-white/[0.05] text-slate-300">
                             <User size={20} />
                         </div>
-                        <div className="flex flex-col flex-1 overflow-hidden">
-                            <span className="text-sm font-semibold text-slate-200 truncate">
-                                {userProfile?.displayName || userProfile?.email || "พนักงาน"}
-                            </span>
-                            <span className="text-xs text-slate-500 capitalize truncate">
+                        <div className="flex flex-1 flex-col overflow-hidden">
+                            <div className="flex items-center gap-2">
+                                <span className="truncate text-sm font-semibold text-slate-100">
+                                    {userProfile?.displayName || userProfile?.email || "พนักงาน"}
+                                </span>
+                                <button
+                                    type="button"
+                                    onClick={handleSignOut}
+                                    className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-slate-400 transition-all duration-200 hover:bg-rose-400/10 hover:text-rose-200"
+                                    title="ออกจากระบบ"
+                                    aria-label="ออกจากระบบ"
+                                >
+                                    <LogOut size={15} />
+                                </button>
+                            </div>
+                            <span className="truncate text-xs capitalize text-slate-400">
                                 สิทธิ์: {translatedRole()}
                             </span>
                         </div>
                     </div>
-                    <button
-                        onClick={handleSignOut}
-                        className="flex w-full items-center px-3 py-2.5 text-slate-400 hover:text-red-400 hover:bg-slate-800/50 rounded-lg transition-colors text-sm font-medium"
-                    >
-                        <LogOut size={18} className="mr-3" />
-                        ออกจากระบบ
-                    </button>
                 </div>
             </div>
+            <style jsx global>{`
+                .sidebar-scroll {
+                    scrollbar-width: thin;
+                    scrollbar-color: rgba(148, 163, 184, 0.45) rgba(255, 255, 255, 0.04);
+                    scrollbar-gutter: stable;
+                }
+
+                .sidebar-scroll::-webkit-scrollbar {
+                    width: 12px;
+                }
+
+                .sidebar-scroll::-webkit-scrollbar-track {
+                    background: rgba(15, 23, 42, 0.35);
+                    border-radius: 999px;
+                    margin: 10px 0;
+                    border: 1px solid rgba(255, 255, 255, 0.04);
+                }
+
+                .sidebar-scroll::-webkit-scrollbar-thumb {
+                    background: linear-gradient(180deg, rgba(148, 163, 184, 0.75), rgba(100, 116, 139, 0.88));
+                    border-radius: 999px;
+                    border: 2px solid rgba(15, 23, 42, 0.72);
+                    min-height: 48px;
+                }
+
+                .sidebar-scroll::-webkit-scrollbar-thumb:hover {
+                    background: linear-gradient(180deg, rgba(191, 219, 254, 0.9), rgba(96, 165, 250, 0.85));
+                }
+
+                .sidebar-scroll::-webkit-scrollbar-corner {
+                    background: transparent;
+                }
+            `}</style>
         </>
     );
 }

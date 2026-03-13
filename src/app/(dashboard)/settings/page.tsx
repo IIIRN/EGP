@@ -49,6 +49,8 @@ interface SystemSettings {
     companySettings: CompanySettings;
     vendorTypes: string[];
     itemUnits: string[];
+    wcPaymentTermTemplates: string[];
+    wcNoteTemplates: string[];
 }
 export default function SettingsPage() {
     const { userProfile } = useAuth();
@@ -77,11 +79,15 @@ export default function SettingsPage() {
             signatures: [],
         },
         vendorTypes: ["วัสดุก่อสร้าง general", "เครื่องมือ-เครื่องจักร", "ผู้รับเหมาช่วง (Sub-contractor)"],
-        itemUnits: ["ชิ้น", "อัน", "กล่อง", "ลัง", "พาเลท", "งาน", "เดือน", "วัน"]
+        itemUnits: ["ชิ้น", "อัน", "กล่อง", "ลัง", "พาเลท", "งาน", "เดือน", "วัน"],
+        wcPaymentTermTemplates: ["งวดที่ 1 = 50% เมื่อเริ่มงาน, งวดที่ 2 = 50% เมื่อส่งมอบงาน"],
+        wcNoteTemplates: ["ราคาดังกล่าวรวมค่าแรงและอุปกรณ์ตามขอบเขตงานแล้ว"]
     });
 
     const [newVendorType, setNewVendorType] = useState("");
     const [newItemUnit, setNewItemUnit] = useState("");
+    const [newWcPaymentTermTemplate, setNewWcPaymentTermTemplate] = useState("");
+    const [newWcNoteTemplate, setNewWcNoteTemplate] = useState("");
     const [activeTab, setActiveTab] = useState('line');
     const [adminRecipients, setAdminRecipients] = useState<AdminRecipientOption[]>([]);
 
@@ -90,6 +96,7 @@ export default function SettingsPage() {
         { id: 'company', label: 'ข้อมูลบริษัท', icon: Building },
         { id: 'vendor', label: 'ประเภทคู่ค้า', icon: Users },
         { id: 'units', label: 'หน่วยนับ', icon: Box },
+        { id: 'wcTemplates', label: 'แม่แบบ WC', icon: Settings },
         { id: 'database', label: 'Database Index', icon: Database },
     ];
 
@@ -726,12 +733,12 @@ export default function SettingsPage() {
 
                                 {(!settings.companySettings.signatures || settings.companySettings.signatures.length === 0) && (
                                     <div className="text-sm text-slate-500 bg-slate-50 border border-slate-200 p-4 rounded-lg text-center">
-                                        ยังไม่มีลายเซ็นในระบบ กดปุ่ม "เพิ่มลายเซ็น" ด้านบน
+                                        ยังไม่มีลายเซ็นในระบบ กดปุ่ม &quot;เพิ่มลายเซ็น&quot; ด้านบน
                                     </div>
                                 )}
 
                                 <div className="space-y-4">
-                                    {settings.companySettings.signatures?.map((sig, idx) => (
+                                    {settings.companySettings.signatures?.map((sig) => (
                                         <div key={sig.id} className="p-4 border border-slate-200 rounded-lg bg-slate-50 flex flex-col md:flex-row gap-4 items-start md:items-center">
                                             <div className="flex-1 space-y-3 w-full">
                                                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -948,6 +955,139 @@ export default function SettingsPage() {
                                         ))}
                                     </div>
                                 )}
+                            </div>
+                        </div>
+                    </div>
+                )}
+
+                {activeTab === 'wcTemplates' && (
+                    <div className="p-8 space-y-8">
+                        <div>
+                            <h2 className="text-xl font-bold text-slate-800 mb-2">แม่แบบใบจ้างงาน (WC)</h2>
+                            <p className="text-sm text-slate-500">
+                                บันทึกข้อความที่ใช้บ่อยสำหรับเงื่อนไขการชำระเงิน งวดงาน และหมายเหตุ เพื่อเรียกใช้ในหน้าสร้างหรือแก้ไขใบจ้างงานได้ทันที
+                            </p>
+                        </div>
+
+                        <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
+                            <div className="space-y-4">
+                                <div>
+                                    <h3 className="text-base font-semibold text-slate-800 mb-1">แม่แบบเงื่อนไขการชำระเงิน / งวดงาน</h3>
+                                    <p className="text-sm text-slate-500">ใช้สำหรับเติมข้อความในช่องเงื่อนไขการชำระเงินของ WC</p>
+                                </div>
+
+                                <div className="flex gap-2">
+                                    <textarea
+                                        value={newWcPaymentTermTemplate}
+                                        onChange={(e) => setNewWcPaymentTermTemplate(e.target.value)}
+                                        placeholder="เช่น งวดที่ 1 = 30% เมื่อเริ่มงาน, งวดที่ 2 = 70% เมื่อส่งมอบงาน"
+                                        rows={3}
+                                        className="flex-1 border border-slate-300 rounded-lg py-2 px-3 text-sm focus:ring-blue-500 focus:border-blue-500"
+                                    />
+                                    <button
+                                        type="button"
+                                        onClick={() => {
+                                            const value = newWcPaymentTermTemplate.trim();
+                                            if (value && !settings.wcPaymentTermTemplates.includes(value)) {
+                                                setSettings((prev) => ({
+                                                    ...prev,
+                                                    wcPaymentTermTemplates: [...prev.wcPaymentTermTemplates, value],
+                                                }));
+                                                setNewWcPaymentTermTemplate("");
+                                            }
+                                        }}
+                                        className="self-start px-4 py-2 bg-slate-800 text-white text-sm font-semibold rounded-lg hover:bg-slate-700 transition"
+                                    >
+                                        เพิ่ม
+                                    </button>
+                                </div>
+
+                                <div className="bg-slate-50 p-4 rounded-lg border border-slate-200 min-h-[120px]">
+                                    {settings.wcPaymentTermTemplates.length === 0 ? (
+                                        <p className="text-slate-400 text-sm text-center py-4">ยังไม่มีแม่แบบเงื่อนไขการชำระเงิน</p>
+                                    ) : (
+                                        <div className="space-y-2">
+                                            {settings.wcPaymentTermTemplates.map((template) => (
+                                                <div key={template} className="flex items-start gap-3 rounded-lg border border-slate-200 bg-white px-3 py-3 shadow-sm">
+                                                    <p className="flex-1 text-sm text-slate-700 whitespace-pre-wrap">{template}</p>
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => {
+                                                            setSettings((prev) => ({
+                                                                ...prev,
+                                                                wcPaymentTermTemplates: prev.wcPaymentTermTemplates.filter((item) => item !== template),
+                                                            }));
+                                                        }}
+                                                        className="text-slate-400 hover:text-red-500 focus:outline-none transition-colors"
+                                                        title="ลบแม่แบบ"
+                                                    >
+                                                        &times;
+                                                    </button>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+
+                            <div className="space-y-4">
+                                <div>
+                                    <h3 className="text-base font-semibold text-slate-800 mb-1">แม่แบบหมายเหตุ / ข้อกำหนดพิเศษ</h3>
+                                    <p className="text-sm text-slate-500">ใช้สำหรับเติมข้อความในช่องหมายเหตุของ WC</p>
+                                </div>
+
+                                <div className="flex gap-2">
+                                    <textarea
+                                        value={newWcNoteTemplate}
+                                        onChange={(e) => setNewWcNoteTemplate(e.target.value)}
+                                        placeholder="เช่น ราคาดังกล่าวยังไม่รวมงานเพิ่มเติมนอกเหนือจากขอบเขตที่ตกลง"
+                                        rows={3}
+                                        className="flex-1 border border-slate-300 rounded-lg py-2 px-3 text-sm focus:ring-blue-500 focus:border-blue-500"
+                                    />
+                                    <button
+                                        type="button"
+                                        onClick={() => {
+                                            const value = newWcNoteTemplate.trim();
+                                            if (value && !settings.wcNoteTemplates.includes(value)) {
+                                                setSettings((prev) => ({
+                                                    ...prev,
+                                                    wcNoteTemplates: [...prev.wcNoteTemplates, value],
+                                                }));
+                                                setNewWcNoteTemplate("");
+                                            }
+                                        }}
+                                        className="self-start px-4 py-2 bg-slate-800 text-white text-sm font-semibold rounded-lg hover:bg-slate-700 transition"
+                                    >
+                                        เพิ่ม
+                                    </button>
+                                </div>
+
+                                <div className="bg-slate-50 p-4 rounded-lg border border-slate-200 min-h-[120px]">
+                                    {settings.wcNoteTemplates.length === 0 ? (
+                                        <p className="text-slate-400 text-sm text-center py-4">ยังไม่มีแม่แบบหมายเหตุ</p>
+                                    ) : (
+                                        <div className="space-y-2">
+                                            {settings.wcNoteTemplates.map((template) => (
+                                                <div key={template} className="flex items-start gap-3 rounded-lg border border-slate-200 bg-white px-3 py-3 shadow-sm">
+                                                    <p className="flex-1 text-sm text-slate-700 whitespace-pre-wrap">{template}</p>
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => {
+                                                            setSettings((prev) => ({
+                                                                ...prev,
+                                                                wcNoteTemplates: prev.wcNoteTemplates.filter((item) => item !== template),
+                                                            }));
+                                                        }}
+                                                        className="text-slate-400 hover:text-red-500 focus:outline-none transition-colors"
+                                                        title="ลบแม่แบบ"
+                                                    >
+                                                        &times;
+                                                    </button>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    )}
+                                </div>
                             </div>
                         </div>
                     </div>

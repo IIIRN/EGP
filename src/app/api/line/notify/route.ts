@@ -126,7 +126,15 @@ function buildPOFlex(params: {
             type: "button",
             style: "secondary",
             height: "sm",
-            action: { type: "uri", label: "โทร", uri: `tel:${vendorData.phone}` },
+            action: { type: "uri", label: "โทรหลัก", uri: `tel:${vendorData.phone}` },
+        });
+    }
+    if (vendorData?.secondaryPhone) {
+        secondaryButtons.push({
+            type: "button",
+            style: "secondary",
+            height: "sm",
+            action: { type: "uri", label: "โทรสำรอง", uri: `tel:${vendorData.secondaryPhone}` },
         });
     }
     if (vendorData?.googleMapUrl) {
@@ -166,6 +174,7 @@ function buildPOFlex(params: {
                         infoRow("เลขที่เอกสาร", asText(data?.poNumber)),
                         infoRow("คู่ค้า", asText(vendorData?.name || data?.vendorName)),
                         infoRow("เบอร์โทร", asText(vendorData?.phone)),
+                        ...(vendorData?.secondaryPhone ? [infoRow("เบอร์สำรอง", asText(vendorData.secondaryPhone))] : []),
                         infoRow("ยอดรวมทั้งสิ้น", formatAmount(data?.totalAmount), { valueColor: COLOR.title, valueWeight: "bold" }),
                     ],
                 },
@@ -280,7 +289,15 @@ function buildWCFlex(params: {
             type: "button",
             style: "secondary",
             height: "sm",
-            action: { type: "uri", label: "โทร", uri: `tel:${asText(vendorInfo.phone, "")}` },
+            action: { type: "uri", label: "โทรหลัก", uri: `tel:${asText(vendorInfo.phone, "")}` },
+        });
+    }
+    if (vendorInfo.secondaryPhone) {
+        secondaryButtons.push({
+            type: "button",
+            style: "secondary",
+            height: "sm",
+            action: { type: "uri", label: "โทรสำรอง", uri: `tel:${asText(vendorInfo.secondaryPhone, "")}` },
         });
     }
     if (secondaryButtons.length > 0) {
@@ -312,6 +329,7 @@ function buildWCFlex(params: {
                         infoRow("เลขที่เอกสาร", asText(docData.wcNumber)),
                         infoRow("ผู้รับจ้าง", asText(vendorInfo.name || docData.vendorName)),
                         infoRow("เบอร์โทร", asText(vendorInfo.phone)),
+                        ...(vendorInfo.secondaryPhone ? [infoRow("เบอร์สำรอง", asText(vendorInfo.secondaryPhone))] : []),
                         infoRow("ยอดรวมทั้งสิ้น", formatAmount(docData.totalAmount), { valueColor: COLOR.title, valueWeight: "bold" }),
                     ],
                 },

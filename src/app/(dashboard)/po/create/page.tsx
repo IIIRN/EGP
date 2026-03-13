@@ -11,6 +11,7 @@ import { db } from "@/lib/firebase";
 import { useRouter } from "next/navigation";
 import { Vendor } from "@/types/vendor";
 import { parseDocumentItemsCsv } from "@/lib/documentItems";
+import { buildDocumentNumber, buildDocumentPrefix, normalizeProjectCode, parseDocumentSequence } from "@/lib/documentNumbers";
 
 type SignatureOption = {
     id: string;
@@ -58,19 +59,18 @@ export default function CreatePOPage() {
 
     useEffect(() => {
         async function fetchNextPoNumber() {
-            const normalizedProjectCode = (currentProject?.code || "")
-                .trim()
-                .toUpperCase()
-                .replace(/[^A-Z0-9]/g, "");
+            const normalizedProjectCode = normalizeProjectCode(currentProject?.code);
             if (!normalizedProjectCode) {
                 setPoNumber("");
                 return;
             }
 
-            const yearStr = new Date().getFullYear().toString();
-            const monthStr = (new Date().getMonth() + 1).toString().padStart(2, '0');
             const typePrefix = poType === 'project' ? 'P' : 'O';
-            const prefix = `PO-${yearStr}${monthStr}-${normalizedProjectCode}-${typePrefix}-`;
+            const prefix = buildDocumentPrefix({
+                series: "PO",
+                projectCode: normalizedProjectCode,
+                typeCode: typePrefix,
+            });
 
             try {
                 const q = query(
@@ -87,18 +87,27 @@ export default function CreatePOPage() {
                 if (!snapshot.empty) {
                     const lastPo = snapshot.docs[0].data();
                     if (lastPo.poNumber) {
-                        const lastNumStr = lastPo.poNumber.substring(prefix.length);
-                        const lastNum = parseInt(lastNumStr, 10);
-                        if (!isNaN(lastNum)) {
+                        const lastNum = parseDocumentSequence(String(lastPo.poNumber), prefix);
+                        if (lastNum !== null) {
                             nextNum = lastNum + 1;
                         }
                     }
                 }
 
-                setPoNumber(`${prefix}${nextNum.toString().padStart(3, '0')}`);
+                setPoNumber(buildDocumentNumber({
+                    series: "PO",
+                    projectCode: normalizedProjectCode,
+                    typeCode: typePrefix,
+                    sequence: nextNum,
+                }));
             } catch (error) {
                 console.error("Error generating PO Number:", error);
-                setPoNumber(`${prefix}001`);
+                setPoNumber(buildDocumentNumber({
+                    series: "PO",
+                    projectCode: normalizedProjectCode,
+                    typeCode: typePrefix,
+                    sequence: 1,
+                }));
             }
         }
 
@@ -434,7 +443,7 @@ export default function CreatePOPage() {
                                 value={poNumber}
                                 onChange={(e) => setPoNumber(e.target.value)}
                                 className="w-full border border-slate-300 rounded-lg py-2 px-3 text-sm focus:ring-blue-500 focus:border-blue-500 bg-white"
-                                placeholder="PO-XXXXXX-XXX"
+                                placeholder="PO403-202603-P001"
                             />
                         </div>
 

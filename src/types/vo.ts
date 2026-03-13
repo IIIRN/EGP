@@ -12,6 +12,7 @@ export interface VariationOrder {
     id: string;
     voNumber: string;
     projectId: string;
+    issueDate?: string;
     title: string;
     reason: string;
     items: VOItem[];
@@ -23,6 +24,6 @@ export interface VariationOrder {
     status: 'draft' | 'pending' | 'approved' | 'rejected';
 
     createdBy: string;
-    createdAt?: any;
-    updatedAt?: any;
+    createdAt?: unknown;
+    updatedAt?: unknown;
 }

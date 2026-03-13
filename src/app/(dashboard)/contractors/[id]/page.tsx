@@ -161,7 +161,7 @@ export default function EditContractorPage({ params }: { params: Promise<{ id: s
 
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                         <div>
-                            <label className="block text-sm font-medium text-slate-700 mb-1">id_contractor <span className="text-red-500">*</span></label>
+                            <label className="block text-sm font-medium text-slate-700 mb-1">รหัสลูกจ้าง<span className="text-red-500">*</span></label>
                             <input type="text" name="idContractor" required value={formData.idContractor || ""} onChange={handleChange} className="w-full border border-slate-300 rounded-lg py-2 px-3 text-sm focus:ring-blue-500 focus:border-blue-500 bg-white" />
                         </div>
                         <div>
