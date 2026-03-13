@@ -358,21 +358,26 @@ export default function CreatePOPage() {
                         notifyPayload = null;
                     }
 
+                    const notifyPayloadObject =
+                        notifyPayload && typeof notifyPayload === "object"
+                            ? (notifyPayload as Record<string, unknown>)
+                            : null;
+
                     if (!notifyRes.ok) {
                         let notifyErrorMsg = "ส่งแจ้งเตือนไปยัง LINE ไม่สำเร็จ";
-                        if (notifyPayload?.message) {
-                            notifyErrorMsg = String(notifyPayload.message);
-                        } else if (notifyPayload?.error) {
-                            notifyErrorMsg = typeof notifyPayload.error === "string" ? notifyPayload.error : notifyErrorMsg;
+                        if (notifyPayloadObject?.message) {
+                            notifyErrorMsg = String(notifyPayloadObject.message);
+                        } else if (notifyPayloadObject?.error) {
+                            notifyErrorMsg = typeof notifyPayloadObject.error === "string" ? notifyPayloadObject.error : notifyErrorMsg;
                         }
 
-                        const failedReason = notifyPayload?.firstFailedReason
-                            ? ` (${String(notifyPayload.firstFailedReason)})`
+                        const failedReason = notifyPayloadObject?.firstFailedReason
+                            ? ` (${String(notifyPayloadObject.firstFailedReason)})`
                             : "";
 
                         console.error("Line notification failed:", notifyErrorMsg);
                         alert(`บันทึกเอกสารแล้ว แต่${notifyErrorMsg}${failedReason}`);
-                    } else if (notifyPayload?.partial) {
+                    } else if (notifyPayloadObject?.partial) {
                         // Keep user flow silent on partial notification success.
                         console.warn("Line notification partial:", notifyPayload);
                     }

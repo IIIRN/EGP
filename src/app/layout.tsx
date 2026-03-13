@@ -15,7 +15,7 @@ const geistMono = Geist_Mono({
 
 export const metadata: Metadata = {
   title: "PUR-Powertec",
-  description: "สร้างเอกสารจ้างงาน PO",
+  description: "สร้างเอกสารจ้างงาน",
 };
 
 export default function RootLayout({

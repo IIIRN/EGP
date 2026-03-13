@@ -6,8 +6,8 @@ import { ProjectProvider } from "@/context/ProjectContext";
 const font = Noto_Sans_Thai({ subsets: ["latin", "thai"] });
 
 export const metadata: Metadata = {
-    title: "EGP - Mobile / LINE LIFF",
-    description: "Mobile app for LINE LIFF usage",
+   title: "PUR-Powertec",
+  description: "สร้างเอกสารจ้างงาน",
 };
 
 export const viewport: Viewport = {
