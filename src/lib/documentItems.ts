@@ -1,5 +1,14 @@
-﻿export const PROCESSING_FEE_LABEL = "ค่าดำเนินการ";
+import { downloadCsv } from "@/lib/csvUtils";
+
+export const PROCESSING_FEE_LABEL = "ค่าดำเนินการ";
 export const FUEL_FEE_LABEL = "\u0E04\u0E48\u0E32\u0E19\u0E49\u0E33\u0E21\u0E31\u0E19";
+export const DOCUMENT_ITEMS_CSV_HEADERS = ["description", "quantity", "unit", "unitPrice"];
+
+const DOCUMENT_ITEMS_CSV_SAMPLE_ROWS: Array<[string, number, string, number]> = [
+    ["Concrete work", 10, "sq.m.", 450],
+    ["Steel structure", 25, "kg", 120],
+    ["Installation labor", 1, "job", 3500],
+];
 
 export type CsvDocumentItem = {
     description: string;
@@ -119,6 +128,10 @@ export function parseDocumentItemsCsv(text: string): CsvDocumentItem[] {
     return parsedRows;
 }
 
+export function downloadDocumentItemsCsvTemplate(filename: string) {
+    downloadCsv(filename, DOCUMENT_ITEMS_CSV_HEADERS, DOCUMENT_ITEMS_CSV_SAMPLE_ROWS);
+}
+
 export function splitProcessingFeeItem<T extends MinimalItem>(items: T[]) {
     if (!items.length) return { items, processingFee: 0 };
 
@@ -133,9 +146,6 @@ export function splitProcessingFeeItem<T extends MinimalItem>(items: T[]) {
         processingFee,
     };
 }
-
-
-
 
 export function splitAdditionalFeeItems<T extends MinimalItem>(items: T[]) {
     if (!items.length) return { items, processingFee: 0, fuelFee: 0 };

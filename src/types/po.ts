@@ -18,8 +18,10 @@ export interface DocumentSignature {
 export interface PurchaseOrder {
     id: string;
     poNumber: string;
-    poType?: "project" | "extra"; // เพิ่มเข้ามาเพื่อแยกประเภท PO 
-    projectId: string; // ถ้าเป็น "extra" อาจจะใส่ projectId ไปด้วยเพื่อให้รู้ว่าเบิกของ project ไหน (ถ้ามี) หรือออฟฟิศ
+    poType?: "project" | "extra";
+    projectId: string;
+    sourcePrId?: string;
+    sourceComparisonId?: string;
     vendorId?: string;
     vendorName?: string;
     items: POItem[];

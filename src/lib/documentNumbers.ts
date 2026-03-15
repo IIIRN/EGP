@@ -1,4 +1,4 @@
-export type DocumentSeries = "PO" | "WC" | "VO";
+export type DocumentSeries = "PO" | "WC" | "VO" | "PR" | "PC";
 
 type BuildDocumentPrefixParams = {
     series: DocumentSeries;
