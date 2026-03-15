@@ -118,7 +118,49 @@ export default function LiffCreateVOPage() {
                 updatedAt: serverTimestamp(),
             };
 
-            await addDoc(collection(db, "variation_orders"), newVO);
+            const docRef = await addDoc(collection(db, "variation_orders"), newVO);
+
+            if (status === "pending") {
+                try {
+                    const notifyRes = await fetch("/api/line/notify", {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({
+                            type: "VO",
+                            data: { ...newVO, id: docRef.id },
+                            projectName: currentProject.name,
+                        }),
+                    });
+
+                    let notifyPayload: unknown = null;
+                    try {
+                        notifyPayload = await notifyRes.json();
+                    } catch {
+                        notifyPayload = null;
+                    }
+
+                    const notifyPayloadObject =
+                        notifyPayload && typeof notifyPayload === "object"
+                            ? (notifyPayload as Record<string, unknown>)
+                            : null;
+
+                    if (!notifyRes.ok || notifyPayloadObject?.success === false) {
+                        const notifyMessage =
+                            typeof notifyPayloadObject?.message === "string" && notifyPayloadObject.message.trim()
+                                ? notifyPayloadObject.message.trim()
+                                : "ส่งแจ้งเตือน LINE ไม่สำเร็จ";
+                        const failedReason =
+                            typeof notifyPayloadObject?.firstFailedReason === "string" && notifyPayloadObject.firstFailedReason.trim()
+                                ? ` (${notifyPayloadObject.firstFailedReason.trim()})`
+                                : "";
+                        console.error("VO LINE notification failed:", notifyPayload);
+                        alert(`สร้าง VO สำเร็จ แต่${notifyMessage}${failedReason}`);
+                    }
+                } catch (notifyError) {
+                    console.error("VO LINE notification failed:", notifyError);
+                    alert("สร้าง VO สำเร็จ แต่เกิดข้อผิดพลาดระหว่างส่งแจ้งเตือน LINE");
+                }
+            }
 
             setSuccess(true);
             setTimeout(() => {

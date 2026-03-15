@@ -1,7 +1,7 @@
 ﻿import { NextResponse } from "next/server";
 import { adminDb } from "@/lib/firebaseAdmin";
 import {
-    getDocumentKindLabel,
+    getDocumentNumber,
     isApprovedDocumentStatus,
     isPendingDocumentStatus,
     resolveDocumentKind,
@@ -26,6 +26,13 @@ type NotifyBody = {
     projectName?: string;
 };
 
+type FooterAction = {
+    label: string;
+    uri: string;
+    style?: "primary" | "secondary";
+    color?: string;
+};
+
 const COLOR = {
     title: "#1e3a8a",
     text: "#334155",
@@ -48,14 +55,10 @@ function toAmount(value: unknown): number {
 
 function extractLineErrorReason(errorData: unknown): string {
     if (!errorData || typeof errorData !== "object") {
-        return "à¹„à¸¡à¹ˆà¸ªà¸²à¸¡à¸²à¸£à¸–à¸£à¸°à¸šà¸¸à¸ªà¸²à¹€à¸«à¸•à¸¸à¹„à¸”à¹‰";
+        return "ไม่สามารถระบุสาเหตุได้";
     }
 
     const data = errorData as { message?: unknown; details?: unknown };
-    if (typeof data.message === "string" && data.message.trim()) {
-        return data.message.trim();
-    }
-
     if (Array.isArray(data.details) && data.details.length > 0) {
         const first = data.details[0] as { message?: unknown; property?: unknown };
         const detailMessage = typeof first?.message === "string" ? first.message : "";
@@ -68,17 +71,97 @@ function extractLineErrorReason(errorData: unknown): string {
         }
     }
 
-    return "à¹„à¸¡à¹ˆà¸ªà¸²à¸¡à¸²à¸£à¸–à¸£à¸°à¸šà¸¸à¸ªà¸²à¹€à¸«à¸•à¸¸à¹„à¸”à¹‰";
+    if (typeof data.message === "string" && data.message.trim()) {
+        return data.message.trim();
+    }
+
+    return "ไม่สามารถระบุสาเหตุได้";
 }
 
 function isValidLineRecipientId(value: string): boolean {
     const normalized = value.trim();
-    // LINE push target supports User/Group/Room ID (U/C/R prefix).
-    return /^[UCR][0-9A-Za-z]{10,}$/.test(normalized);
+    // LINE push target supports User/Group/Room IDs in the form U/C/R + 32 hex chars.
+    return /^[UCR][0-9a-f]{32}$/i.test(normalized);
 }
 
 function formatAmount(value: unknown): string {
-    return `à¸¿${toAmount(value).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+    return `฿${toAmount(value).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+}
+
+function shouldRetryAsPlainText(errorData: unknown) {
+    if (!errorData || typeof errorData !== "object") return false;
+
+    const data = errorData as { message?: unknown; details?: unknown };
+    if (typeof data.message === "string" && data.message.toLowerCase().includes("messages[0]")) {
+        return true;
+    }
+
+    return Array.isArray(data.details) && data.details.length > 0;
+}
+
+function getNotifyDocumentLabel(docKind: ReturnType<typeof resolveDocumentKind>) {
+    if (docKind === "PO") return "ใบสั่งซื้อ (PO)";
+    if (docKind === "VO") return "งานเพิ่ม-ลด (VO)";
+    if (docKind === "WC") return "ใบจ้างงาน (WC)";
+    if (docKind === "PR") return "ใบขอซื้อ/ขอจ้าง (PR)";
+    if (docKind === "PC") return "เอกสารเทียบราคา (PC)";
+    return "-";
+}
+
+function buildPlainTextMessage(params: {
+    type?: string;
+    projectName?: string;
+    data?: NotifyRecord;
+    vendorData?: NotifyRecord;
+}) {
+    const { type, projectName, data, vendorData } = params;
+    const normalizedKind = type ? resolveDocumentKind(type) : null;
+    const documentStatus = asText(data?.status, "") || undefined;
+    const isPending = normalizedKind ? isPendingDocumentStatus(normalizedKind, documentStatus) : documentStatus === "pending";
+    const isApproved = normalizedKind ? isApprovedDocumentStatus(normalizedKind, documentStatus) : documentStatus === "approved";
+    const docLabel = normalizedKind ? getNotifyDocumentLabel(normalizedKind) : asText(type, "เอกสาร");
+    const docNumber = getDocumentNumber({
+        comparisonNumber: data?.comparisonNumber,
+        poNumber: data?.poNumber,
+        voNumber: data?.voNumber,
+        wcNumber: data?.wcNumber,
+        prNumber: data?.prNumber,
+    });
+
+    let statusText = asText(data?.status, "-");
+    if (isPending) {
+        statusText = "รออนุมัติ";
+    } else if (isApproved) {
+        statusText = "อนุมัติแล้ว";
+    }
+
+    const detailLines: string[] = [];
+    if (type === "PO") {
+        detailLines.push(`คู่ค้า: ${asText(vendorData?.name || data?.vendorName)}`);
+        detailLines.push(`ยอดรวม: ${formatAmount(data?.totalAmount)}`);
+    } else if (type === "WC") {
+        detailLines.push(`ผู้รับจ้าง: ${asText(vendorData?.name || data?.vendorName)}`);
+        detailLines.push(`ยอดรวม: ${formatAmount(data?.totalAmount)}`);
+    } else if (type === "VO") {
+        detailLines.push(`หัวข้อ: ${asText(data?.title)}`);
+        detailLines.push(`มูลค่า: ${formatAmount(data?.totalAmount)}`);
+    } else if (type === "PR") {
+        detailLines.push(`หัวข้อ: ${asText(data?.title)}`);
+        detailLines.push(`ผู้ขอ: ${asText(data?.requestedByName)}`);
+        detailLines.push(`มูลค่า: ${formatAmount(data?.totalAmount)}`);
+    } else if (type === "PC") {
+        detailLines.push(`PR: ${asText(data?.prNumber)}`);
+        detailLines.push(`ผู้ที่เสนอเลือก: ${asText(data?.recommendedSupplierName)}`);
+        detailLines.push(`ยอดที่เลือก: ${formatAmount(data?.recommendedTotalAmount)}`);
+    }
+
+    return [
+        `แจ้งเตือน${docLabel}`,
+        `โครงการ: ${asText(projectName, "ไม่ระบุโครงการ")}`,
+        `เลขที่: ${docNumber}`,
+        `สถานะ: ${statusText}`,
+        ...detailLines,
+    ].join("\n");
 }
 
 function infoRow(
@@ -106,61 +189,100 @@ function infoRow(
     };
 }
 
-function buildPOFlex(params: {
-    isPending: boolean;
+function sanitizePhoneUri(value: unknown): string | null {
+    const raw = asText(value, "");
+    if (!raw) return null;
+    const normalized = raw.replace(/\s+/g, "");
+    return normalized ? `tel:${normalized}` : null;
+}
+
+function sanitizeMapUri(value: unknown): string | null {
+    const raw = asText(value, "");
+    if (!raw) return null;
+    return /^https?:\/\//i.test(raw) ? raw : null;
+}
+
+function buildVendorFooterActions(vendorData?: NotifyRecord): FooterAction[] {
+    const actions: FooterAction[] = [];
+    const primaryPhoneUri = sanitizePhoneUri(vendorData?.phone);
+    const secondaryPhoneUri = sanitizePhoneUri(vendorData?.secondaryPhone);
+    const mapUri = sanitizeMapUri(vendorData?.googleMapUrl);
+
+    if (primaryPhoneUri) {
+        actions.push({
+            label: "โทรหลัก",
+            uri: primaryPhoneUri,
+            style: "secondary",
+        });
+    }
+
+    if (secondaryPhoneUri) {
+        actions.push({
+            label: "โทรสำรอง",
+            uri: secondaryPhoneUri,
+            style: "secondary",
+        });
+    }
+
+    if (mapUri) {
+        actions.push({
+            label: "แผนที่",
+            uri: mapUri,
+            style: "secondary",
+        });
+    }
+
+    return actions;
+}
+
+function buildDocumentFooter(actionUrl: string, hasActionButton: boolean, actionLabel: string, extraActions: FooterAction[] = []) {
+    if (!hasActionButton && extraActions.length === 0) return undefined;
+
+    return {
+        type: "box",
+        layout: "vertical",
+        spacing: "sm",
+        contents: [
+            ...(hasActionButton ? [{
+                type: "button",
+                style: "primary",
+                color: COLOR.primary,
+                height: "sm",
+                action: { type: "uri", label: actionLabel, uri: actionUrl },
+            }] : []),
+            ...extraActions.map((item) => ({
+                type: "button",
+                style: item.style || "secondary",
+                ...(item.color ? { color: item.color } : {}),
+                height: "sm",
+                action: { type: "uri", label: item.label, uri: item.uri },
+            })),
+        ],
+    };
+}
+
+function buildDocumentFlexBubble(params: {
     projectName?: string;
-    data?: NotifyRecord;
-    vendorData?: NotifyRecord;
-    approveUrl: string;
-    hasApproveButton: boolean;
+    docTypeLabel: string;
+    statusText: string;
+    documentNumber: string;
+    detailRows: ReturnType<typeof infoRow>[];
+    actionUrl: string;
+    hasActionButton: boolean;
+    actionLabel: string;
+    extraActions?: FooterAction[];
 }) {
-    const { isPending, projectName, data, vendorData, approveUrl, hasApproveButton } = params;
-    const statusText = isPending ? "à¸£à¸­à¸­à¸™à¸¸à¸¡à¸±à¸•à¸´" : "à¸­à¸™à¸¸à¸¡à¸±à¸•à¸´à¹à¸¥à¹‰à¸§";
-
-    const footerContents: unknown[] = [];
-    if (hasApproveButton) {
-        footerContents.push({
-            type: "button",
-            style: "primary",
-            color: COLOR.primary,
-            height: "sm",
-            action: { type: "uri", label: "à¸•à¸£à¸§à¸ˆà¸ªà¸­à¸šà¹à¸¥à¸°à¸­à¸™à¸¸à¸¡à¸±à¸•à¸´", uri: approveUrl },
-        });
-    }
-
-    const secondaryButtons: unknown[] = [];
-    if (vendorData?.phone) {
-        secondaryButtons.push({
-            type: "button",
-            style: "secondary",
-            height: "sm",
-            action: { type: "uri", label: "à¹‚à¸—à¸£à¸«à¸¥à¸±à¸", uri: `tel:${vendorData.phone}` },
-        });
-    }
-    if (vendorData?.secondaryPhone) {
-        secondaryButtons.push({
-            type: "button",
-            style: "secondary",
-            height: "sm",
-            action: { type: "uri", label: "à¹‚à¸—à¸£à¸ªà¸³à¸£à¸­à¸‡", uri: `tel:${vendorData.secondaryPhone}` },
-        });
-    }
-    if (vendorData?.googleMapUrl) {
-        secondaryButtons.push({
-            type: "button",
-            style: "secondary",
-            height: "sm",
-            action: { type: "uri", label: "à¹à¸œà¸™à¸—à¸µà¹ˆ", uri: vendorData.googleMapUrl },
-        });
-    }
-    if (secondaryButtons.length > 0) {
-        footerContents.push({
-            type: "box",
-            layout: "horizontal",
-            spacing: "sm",
-            contents: secondaryButtons,
-        });
-    }
+    const {
+        projectName,
+        docTypeLabel,
+        statusText,
+        documentNumber,
+        detailRows,
+        actionUrl,
+        hasActionButton,
+        actionLabel,
+        extraActions = [],
+    } = params;
 
     return {
         type: "bubble",
@@ -170,37 +292,63 @@ function buildPOFlex(params: {
             layout: "vertical",
             spacing: "md",
             contents: [
-                { type: "text", text: asText(projectName, "à¹„à¸¡à¹ˆà¸£à¸°à¸šà¸¸à¹‚à¸„à¸£à¸‡à¸à¸²à¸£"), size: "sm", color: COLOR.title, weight: "bold", wrap: true },
+                {
+                    type: "text",
+                    text: asText(projectName, "ไม่ระบุโครงการ"),
+                    size: "sm",
+                    color: COLOR.title,
+                    weight: "bold",
+                    wrap: true,
+                },
                 { type: "separator", color: COLOR.border },
                 {
                     type: "box",
                     layout: "vertical",
                     spacing: "sm",
                     contents: [
-                        infoRow("à¸›à¸£à¸°à¹€à¸ à¸—à¹€à¸­à¸à¸ªà¸²à¸£", "à¹ƒà¸šà¸ªà¸±à¹ˆà¸‡à¸‹à¸·à¹‰à¸­ (PO)"),
-                        infoRow("à¸ªà¸–à¸²à¸™à¸°", statusText, { valueColor: COLOR.title, valueWeight: "bold" }),
-                        infoRow("à¹€à¸¥à¸‚à¸—à¸µà¹ˆà¹€à¸­à¸à¸ªà¸²à¸£", asText(data?.poNumber)),
-                        infoRow("à¸„à¸¹à¹ˆà¸„à¹‰à¸²", asText(vendorData?.name || data?.vendorName)),
-                        infoRow("à¹€à¸šà¸­à¸£à¹Œà¹‚à¸—à¸£", asText(vendorData?.phone)),
-                        ...(vendorData?.secondaryPhone ? [infoRow("à¹€à¸šà¸­à¸£à¹Œà¸ªà¸³à¸£à¸­à¸‡", asText(vendorData.secondaryPhone))] : []),
-                        infoRow("à¸¢à¸­à¸”à¸£à¸§à¸¡à¸—à¸±à¹‰à¸‡à¸ªà¸´à¹‰à¸™", formatAmount(data?.totalAmount), { valueColor: COLOR.title, valueWeight: "bold" }),
+                        infoRow("ประเภทเอกสาร", docTypeLabel),
+                        infoRow("สถานะ", statusText, { valueColor: COLOR.title, valueWeight: "bold" }),
+                        infoRow("เลขที่เอกสาร", documentNumber),
+                        ...detailRows,
                     ],
                 },
             ],
         },
-        footer: footerContents.length > 0
-            ? {
-                type: "box",
-                layout: "vertical",
-                spacing: "sm",
-                contents: footerContents,
-            }
-            : undefined,
+        footer: buildDocumentFooter(actionUrl, hasActionButton, actionLabel, extraActions),
         styles: {
             body: { backgroundColor: "#ffffff" },
             footer: { backgroundColor: COLOR.surface, separator: true },
         },
     };
+}
+
+function buildPOFlex(params: {
+    isPending: boolean;
+    projectName?: string;
+    data?: NotifyRecord;
+    vendorData?: NotifyRecord;
+    approveUrl: string;
+    hasApproveButton: boolean;
+    actionLabel: string;
+}) {
+    const { isPending, projectName, data, vendorData, approveUrl, hasApproveButton, actionLabel } = params;
+
+    return buildDocumentFlexBubble({
+        projectName,
+        docTypeLabel: "ใบสั่งซื้อ (PO)",
+        statusText: isPending ? "รออนุมัติ" : "อนุมัติแล้ว",
+        documentNumber: asText(data?.poNumber),
+        detailRows: [
+            infoRow("คู่ค้า", asText(vendorData?.name || data?.vendorName)),
+            infoRow("เบอร์โทร", asText(vendorData?.phone)),
+            ...(vendorData?.secondaryPhone ? [infoRow("เบอร์สำรอง", asText(vendorData.secondaryPhone))] : []),
+            infoRow("ยอดรวมทั้งสิ้น", formatAmount(data?.totalAmount), { valueColor: COLOR.title, valueWeight: "bold" }),
+        ],
+        actionUrl: approveUrl,
+        hasActionButton: hasApproveButton,
+        actionLabel,
+        extraActions: buildVendorFooterActions(vendorData),
+    });
 }
 
 function buildVOFlex(params: {
@@ -209,153 +357,57 @@ function buildVOFlex(params: {
     data?: NotifyRecord;
     approveUrl: string;
     hasApproveButton: boolean;
+    actionLabel: string;
 }) {
-    const { isPending, projectName, data, approveUrl, hasApproveButton } = params;
-    const statusText = isPending ? "à¸£à¸­à¸­à¸™à¸¸à¸¡à¸±à¸•à¸´" : "à¸­à¸™à¸¸à¸¡à¸±à¸•à¸´à¹à¸¥à¹‰à¸§";
+    const { isPending, projectName, data, approveUrl, hasApproveButton, actionLabel } = params;
     const impactValue = toAmount(data?.totalAmount);
 
-    const footer = hasApproveButton
-        ? {
-            type: "box",
-            layout: "vertical",
-            spacing: "sm",
-            contents: [
-                {
-                    type: "button",
-                    style: "primary",
-                    color: COLOR.primary,
-                    height: "sm",
-                    action: { type: "uri", label: "à¸•à¸£à¸§à¸ˆà¸ªà¸­à¸šà¹à¸¥à¸°à¸­à¸™à¸¸à¸¡à¸±à¸•à¸´", uri: approveUrl },
-                },
-            ],
-        }
-        : undefined;
-
-    return {
-        type: "bubble",
-        size: "mega",
-        body: {
-            type: "box",
-            layout: "vertical",
-            spacing: "md",
-            contents: [
-                { type: "text", text: asText(projectName, "à¹„à¸¡à¹ˆà¸£à¸°à¸šà¸¸à¹‚à¸„à¸£à¸‡à¸à¸²à¸£"), size: "sm", color: COLOR.title, weight: "bold", wrap: true },
-                { type: "separator", color: COLOR.border },
-                {
-                    type: "box",
-                    layout: "vertical",
-                    spacing: "sm",
-                    contents: [
-                        infoRow("à¸›à¸£à¸°à¹€à¸ à¸—à¹€à¸­à¸à¸ªà¸²à¸£", "à¸‡à¸²à¸™à¹€à¸žà¸´à¹ˆà¸¡-à¸¥à¸” (VO)"),
-                        infoRow("à¸ªà¸–à¸²à¸™à¸°", statusText, { valueColor: COLOR.title, valueWeight: "bold" }),
-                        infoRow("à¹€à¸¥à¸‚à¸—à¸µà¹ˆà¹€à¸­à¸à¸ªà¸²à¸£", asText(data?.voNumber)),
-                        infoRow("à¸«à¸±à¸§à¸‚à¹‰à¸­", asText(data?.title)),
-                        infoRow(
-                            "à¸œà¸¥à¸à¸£à¸°à¸—à¸šà¸‡à¸šà¸›à¸£à¸°à¸¡à¸²à¸“",
-                            `${impactValue > 0 ? "+" : ""}${formatAmount(impactValue)}`,
-                            { valueColor: COLOR.title, valueWeight: "bold" }
-                        ),
-                    ],
-                },
-            ],
-        },
-        footer,
-        styles: {
-            body: { backgroundColor: "#ffffff" },
-            footer: { backgroundColor: COLOR.surface, separator: true },
-        },
-    };
+    return buildDocumentFlexBubble({
+        projectName,
+        docTypeLabel: "งานเพิ่ม-ลด (VO)",
+        statusText: isPending ? "รออนุมัติ" : "อนุมัติแล้ว",
+        documentNumber: asText(data?.voNumber),
+        detailRows: [
+            infoRow("หัวข้อ", asText(data?.title)),
+            infoRow(
+                "ผลกระทบงบประมาณ",
+                `${impactValue > 0 ? "+" : ""}${formatAmount(impactValue)}`,
+                { valueColor: COLOR.title, valueWeight: "bold" }
+            ),
+        ],
+        actionUrl: approveUrl,
+        hasActionButton: hasApproveButton,
+        actionLabel,
+    });
 }
 
 function buildWCFlex(params: {
     isPending: boolean;
     projectName?: string;
-    data?: unknown;
-    vendorData?: unknown;
+    data?: NotifyRecord;
+    vendorData?: NotifyRecord;
     approveUrl: string;
     hasApproveButton: boolean;
+    actionLabel: string;
 }) {
-    const { isPending, projectName, data, vendorData, approveUrl, hasApproveButton } = params;
-    const statusText = isPending ? "à¸£à¸­à¸­à¸™à¸¸à¸¡à¸±à¸•à¸´" : "à¸­à¸™à¸¸à¸¡à¸±à¸•à¸´à¹à¸¥à¹‰à¸§";
-    const docData = (data && typeof data === "object") ? (data as Record<string, unknown>) : {};
-    const vendorInfo = (vendorData && typeof vendorData === "object") ? (vendorData as Record<string, unknown>) : {};
+    const { isPending, projectName, data, vendorData, approveUrl, hasApproveButton, actionLabel } = params;
 
-    const footerContents: unknown[] = [];
-    if (hasApproveButton) {
-        footerContents.push({
-            type: "button",
-            style: "primary",
-            color: COLOR.primary,
-            height: "sm",
-            action: { type: "uri", label: "à¸•à¸£à¸§à¸ˆà¸ªà¸­à¸šà¹à¸¥à¸°à¸­à¸™à¸¸à¸¡à¸±à¸•à¸´", uri: approveUrl },
-        });
-    }
-
-    const secondaryButtons: unknown[] = [];
-    if (vendorInfo.phone) {
-        secondaryButtons.push({
-            type: "button",
-            style: "secondary",
-            height: "sm",
-            action: { type: "uri", label: "à¹‚à¸—à¸£à¸«à¸¥à¸±à¸", uri: `tel:${asText(vendorInfo.phone, "")}` },
-        });
-    }
-    if (vendorInfo.secondaryPhone) {
-        secondaryButtons.push({
-            type: "button",
-            style: "secondary",
-            height: "sm",
-            action: { type: "uri", label: "à¹‚à¸—à¸£à¸ªà¸³à¸£à¸­à¸‡", uri: `tel:${asText(vendorInfo.secondaryPhone, "")}` },
-        });
-    }
-    if (secondaryButtons.length > 0) {
-        footerContents.push({
-            type: "box",
-            layout: "horizontal",
-            spacing: "sm",
-            contents: secondaryButtons,
-        });
-    }
-
-    return {
-        type: "bubble",
-        size: "mega",
-        body: {
-            type: "box",
-            layout: "vertical",
-            spacing: "md",
-            contents: [
-                { type: "text", text: asText(projectName, "à¹„à¸¡à¹ˆà¸£à¸°à¸šà¸¸à¹‚à¸„à¸£à¸‡à¸à¸²à¸£"), size: "sm", color: COLOR.title, weight: "bold", wrap: true },
-                { type: "separator", color: COLOR.border },
-                {
-                    type: "box",
-                    layout: "vertical",
-                    spacing: "sm",
-                    contents: [
-                        infoRow("à¸›à¸£à¸°à¹€à¸ à¸—à¹€à¸­à¸à¸ªà¸²à¸£", "à¹ƒà¸šà¸ˆà¹‰à¸²à¸‡à¸‡à¸²à¸™ (WC)"),
-                        infoRow("à¸ªà¸–à¸²à¸™à¸°", statusText, { valueColor: COLOR.title, valueWeight: "bold" }),
-                        infoRow("à¹€à¸¥à¸‚à¸—à¸µà¹ˆà¹€à¸­à¸à¸ªà¸²à¸£", asText(docData.wcNumber)),
-                        infoRow("à¸œà¸¹à¹‰à¸£à¸±à¸šà¸ˆà¹‰à¸²à¸‡", asText(vendorInfo.name || docData.vendorName)),
-                        infoRow("à¹€à¸šà¸­à¸£à¹Œà¹‚à¸—à¸£", asText(vendorInfo.phone)),
-                        ...(vendorInfo.secondaryPhone ? [infoRow("à¹€à¸šà¸­à¸£à¹Œà¸ªà¸³à¸£à¸­à¸‡", asText(vendorInfo.secondaryPhone))] : []),
-                        infoRow("à¸¢à¸­à¸”à¸£à¸§à¸¡à¸—à¸±à¹‰à¸‡à¸ªà¸´à¹‰à¸™", formatAmount(docData.totalAmount), { valueColor: COLOR.title, valueWeight: "bold" }),
-                    ],
-                },
-            ],
-        },
-        footer: footerContents.length > 0
-            ? {
-                type: "box",
-                layout: "vertical",
-                spacing: "sm",
-                contents: footerContents,
-            }
-            : undefined,
-        styles: {
-            body: { backgroundColor: "#ffffff" },
-            footer: { backgroundColor: COLOR.surface, separator: true },
-        },
-    };
+    return buildDocumentFlexBubble({
+        projectName,
+        docTypeLabel: "ใบจ้างงาน (WC)",
+        statusText: isPending ? "รออนุมัติ" : "อนุมัติแล้ว",
+        documentNumber: asText(data?.wcNumber),
+        detailRows: [
+            infoRow("ผู้รับจ้าง", asText(vendorData?.name || data?.vendorName)),
+            infoRow("เบอร์โทร", asText(vendorData?.phone)),
+            ...(vendorData?.secondaryPhone ? [infoRow("เบอร์สำรอง", asText(vendorData.secondaryPhone))] : []),
+            infoRow("ยอดรวมทั้งสิ้น", formatAmount(data?.totalAmount), { valueColor: COLOR.title, valueWeight: "bold" }),
+        ],
+        actionUrl: approveUrl,
+        hasActionButton: hasApproveButton,
+        actionLabel,
+        extraActions: buildVendorFooterActions(vendorData),
+    });
 }
 
 function buildPRFlex(params: {
@@ -364,58 +416,25 @@ function buildPRFlex(params: {
     data?: NotifyRecord;
     approveUrl: string;
     hasApproveButton: boolean;
+    actionLabel: string;
 }) {
-    const { isPending, projectName, data, approveUrl, hasApproveButton } = params;
-    const statusText = isPending ? "à¸£à¸­à¸­à¸™à¸¸à¸¡à¸±à¸•à¸´" : "à¸­à¸™à¸¸à¸¡à¸±à¸•à¸´à¹ƒà¸«à¹‰à¸ˆà¸±à¸”à¸«à¸²à¹à¸¥à¹‰à¸§";
-    const footer = hasApproveButton
-        ? {
-            type: "box",
-            layout: "vertical",
-            spacing: "sm",
-            contents: [
-                {
-                    type: "button",
-                    style: "primary",
-                    color: COLOR.primary,
-                    height: "sm",
-                    action: { type: "uri", label: "à¸•à¸£à¸§à¸ˆà¸ªà¸­à¸šà¹à¸¥à¸°à¸­à¸™à¸¸à¸¡à¸±à¸•à¸´", uri: approveUrl },
-                },
-            ],
-        }
-        : undefined;
+    const { isPending, projectName, data, approveUrl, hasApproveButton, actionLabel } = params;
 
-    return {
-        type: "bubble",
-        size: "mega",
-        body: {
-            type: "box",
-            layout: "vertical",
-            spacing: "md",
-            contents: [
-                { type: "text", text: asText(projectName, "à¹„à¸¡à¹ˆà¸£à¸°à¸šà¸¸à¹‚à¸„à¸£à¸‡à¸à¸²à¸£"), size: "sm", color: COLOR.title, weight: "bold", wrap: true },
-                { type: "separator", color: COLOR.border },
-                {
-                    type: "box",
-                    layout: "vertical",
-                    spacing: "sm",
-                    contents: [
-                        infoRow("à¸›à¸£à¸°à¹€à¸ à¸—à¹€à¸­à¸à¸ªà¸²à¸£", "à¹ƒà¸šà¸‚à¸­à¸‹à¸·à¹‰à¸­/à¸‚à¸­à¸ˆà¹‰à¸²à¸‡ (PR)"),
-                        infoRow("à¸ªà¸–à¸²à¸™à¸°", statusText, { valueColor: COLOR.title, valueWeight: "bold" }),
-                        infoRow("à¹€à¸¥à¸‚à¸—à¸µà¹ˆà¹€à¸­à¸à¸ªà¸²à¸£", asText(data?.prNumber)),
-                        infoRow("à¸«à¸±à¸§à¸‚à¹‰à¸­", asText(data?.title)),
-                        infoRow("à¸œà¸¹à¹‰à¸‚à¸­", asText(data?.requestedByName)),
-                        infoRow("à¸£à¸¹à¸›à¹à¸šà¸šà¸›à¸¥à¸²à¸¢à¸—à¸²à¸‡", asText(data?.fulfillmentType === "wc" ? "à¸­à¸­à¸ WC" : "à¸­à¸­à¸ PO")),
-                        infoRow("à¸¡à¸¹à¸¥à¸„à¹ˆà¸²à¸£à¸§à¸¡à¹‚à¸”à¸¢à¸›à¸£à¸°à¸¡à¸²à¸“", formatAmount(data?.totalAmount), { valueColor: COLOR.title, valueWeight: "bold" }),
-                    ],
-                },
-            ],
-        },
-        footer,
-        styles: {
-            body: { backgroundColor: "#ffffff" },
-            footer: { backgroundColor: COLOR.surface, separator: true },
-        },
-    };
+    return buildDocumentFlexBubble({
+        projectName,
+        docTypeLabel: "ใบขอซื้อ/ขอจ้าง (PR)",
+        statusText: isPending ? "รออนุมัติ" : "อนุมัติให้จัดหาแล้ว",
+        documentNumber: asText(data?.prNumber),
+        detailRows: [
+            infoRow("หัวข้อ", asText(data?.title)),
+            infoRow("ผู้ขอ", asText(data?.requestedByName)),
+            infoRow("รูปแบบปลายทาง", asText(data?.fulfillmentType === "wc" ? "ออก WC" : "ออก PO")),
+            infoRow("มูลค่ารวมโดยประมาณ", formatAmount(data?.totalAmount), { valueColor: COLOR.title, valueWeight: "bold" }),
+        ],
+        actionUrl: approveUrl,
+        hasActionButton: hasApproveButton,
+        actionLabel,
+    });
 }
 
 function buildPCFlex(params: {
@@ -424,58 +443,25 @@ function buildPCFlex(params: {
     data?: NotifyRecord;
     approveUrl: string;
     hasApproveButton: boolean;
+    actionLabel: string;
 }) {
-    const { isPending, projectName, data, approveUrl, hasApproveButton } = params;
-    const statusText = isPending ? "à¸£à¸­à¸­à¸™à¸¸à¸¡à¸±à¸•à¸´à¸œà¸¥à¹€à¸—à¸µà¸¢à¸šà¸£à¸²à¸„à¸²" : "à¸­à¸™à¸¸à¸¡à¸±à¸•à¸´à¸œà¸¥à¹€à¸—à¸µà¸¢à¸šà¸£à¸²à¸„à¸²à¹à¸¥à¹‰à¸§";
-    const footer = hasApproveButton
-        ? {
-            type: "box",
-            layout: "vertical",
-            spacing: "sm",
-            contents: [
-                {
-                    type: "button",
-                    style: "primary",
-                    color: COLOR.primary,
-                    height: "sm",
-                    action: { type: "uri", label: "à¸•à¸£à¸§à¸ˆà¸ªà¸­à¸šà¹à¸¥à¸°à¸­à¸™à¸¸à¸¡à¸±à¸•à¸´", uri: approveUrl },
-                },
-            ],
-        }
-        : undefined;
+    const { isPending, projectName, data, approveUrl, hasApproveButton, actionLabel } = params;
 
-    return {
-        type: "bubble",
-        size: "mega",
-        body: {
-            type: "box",
-            layout: "vertical",
-            spacing: "md",
-            contents: [
-                { type: "text", text: asText(projectName, "à¹„à¸¡à¹ˆà¸£à¸°à¸šà¸¸à¹‚à¸„à¸£à¸‡à¸à¸²à¸£"), size: "sm", color: COLOR.title, weight: "bold", wrap: true },
-                { type: "separator", color: COLOR.border },
-                {
-                    type: "box",
-                    layout: "vertical",
-                    spacing: "sm",
-                    contents: [
-                        infoRow("à¸›à¸£à¸°à¹€à¸ à¸—à¹€à¸­à¸à¸ªà¸²à¸£", "à¹€à¸­à¸à¸ªà¸²à¸£à¹€à¸—à¸µà¸¢à¸šà¸£à¸²à¸„à¸² (PC)"),
-                        infoRow("à¸ªà¸–à¸²à¸™à¸°", statusText, { valueColor: COLOR.title, valueWeight: "bold" }),
-                        infoRow("à¹€à¸¥à¸‚à¸—à¸µà¹ˆà¹€à¸­à¸à¸ªà¸²à¸£", asText(data?.comparisonNumber)),
-                        infoRow("PR à¸•à¹‰à¸™à¸—à¸²à¸‡", asText(data?.prNumber)),
-                        infoRow("à¸«à¸±à¸§à¸‚à¹‰à¸­", asText(data?.title)),
-                        infoRow("à¸œà¸¹à¹‰à¸—à¸µà¹ˆà¹€à¸ªà¸™à¸­à¹€à¸¥à¸·à¸­à¸", asText(data?.recommendedSupplierName)),
-                        infoRow("à¸¢à¸­à¸”à¸—à¸µà¹ˆà¹€à¸ªà¸™à¸­à¹€à¸¥à¸·à¸­à¸", formatAmount(data?.recommendedTotalAmount), { valueColor: COLOR.title, valueWeight: "bold" }),
-                    ],
-                },
-            ],
-        },
-        footer,
-        styles: {
-            body: { backgroundColor: "#ffffff" },
-            footer: { backgroundColor: COLOR.surface, separator: true },
-        },
-    };
+    return buildDocumentFlexBubble({
+        projectName,
+        docTypeLabel: "เอกสารเทียบราคา (PC)",
+        statusText: isPending ? "รออนุมัติผลเทียบราคา" : "อนุมัติผลเทียบราคาแล้ว",
+        documentNumber: asText(data?.comparisonNumber),
+        detailRows: [
+            infoRow("PR ต้นทาง", asText(data?.prNumber)),
+            infoRow("หัวข้อ", asText(data?.title)),
+            infoRow("ผู้ที่เสนอเลือก", asText(data?.recommendedSupplierName)),
+            infoRow("ยอดที่เสนอเลือก", formatAmount(data?.recommendedTotalAmount), { valueColor: COLOR.title, valueWeight: "bold" }),
+        ],
+        actionUrl: approveUrl,
+        hasActionButton: hasApproveButton,
+        actionLabel,
+    });
 }
 
 export async function POST(request: Request) {
@@ -485,13 +471,16 @@ export async function POST(request: Request) {
 
         const settingsDoc = await adminDb.collection("system_settings").doc("global_config").get();
         if (!settingsDoc.exists) {
-            return NextResponse.json({ success: false, message: "LINE settings not found" });
+            return NextResponse.json({ success: false, message: "LINE settings not found" }, { status: 500 });
         }
 
         const settings = (settingsDoc.data()?.lineIntegration || {}) as LineSettings;
         const lineToken = asText(settings.lineToken, "");
         if (!settings.isEnabled || !lineToken) {
-            return NextResponse.json({ success: false, message: "LINE integration is disabled or token missing" });
+            return NextResponse.json(
+                { success: false, message: "LINE integration is disabled or token missing" },
+                { status: 400 }
+            );
         }
 
         const configuredTargetIds = new Set<string>();
@@ -548,10 +537,56 @@ export async function POST(request: Request) {
             }
         }
 
+        if (
+            configuredTargetIds.size === 0 &&
+            candidateAdminUids.size === 0 &&
+            !asText(settings.groupId, "") &&
+            !asText(settings.userId, "")
+        ) {
+            const adminSnapshot = await adminDb
+                .collection("users")
+                .where("role", "==", "admin")
+                .get();
+
+            for (const adminDoc of adminSnapshot.docs) {
+                const adminData = adminDoc.data() as { isActive?: boolean; lineUserId?: unknown };
+                if (adminData.isActive === false) continue;
+
+                const lineUserId = asText(adminData.lineUserId, "");
+                if (lineUserId) {
+                    pushTarget(lineUserId, `auto-admin:${adminDoc.id}`);
+                }
+            }
+        }
+
         if (configuredTargetIds.size === 0) {
             pushTarget(settings.userId, "legacyUserId");
         }
 
+        let resolvedVendorData = vendorData;
+        const sourceVendorId = asText(data?.vendorId, "");
+        if ((type === "PO" || type === "WC") && sourceVendorId) {
+            const hasPhone = Boolean(asText(resolvedVendorData?.phone, ""));
+            const hasMap = Boolean(asText(resolvedVendorData?.googleMapUrl, ""));
+            const sourceCollection = type === "PO" ? "vendors" : "contractors";
+            const shouldHydrateVendor = !hasPhone || (type === "PO" && !hasMap);
+
+            if (shouldHydrateVendor) {
+                const sourceDoc = await adminDb.collection(sourceCollection).doc(sourceVendorId).get();
+                if (sourceDoc.exists) {
+                    resolvedVendorData = {
+                        id: sourceDoc.id,
+                        ...sourceDoc.data(),
+                        ...(resolvedVendorData || {}),
+                    };
+                }
+            }
+        }
+
+        const normalizedKind = type ? resolveDocumentKind(type) : null;
+        const documentStatus = asText(data?.status, "") || undefined;
+        const isPending = normalizedKind ? isPendingDocumentStatus(normalizedKind, documentStatus) : documentStatus === "pending";
+        const isApproved = normalizedKind ? isApprovedDocumentStatus(normalizedKind, documentStatus) : documentStatus === "approved";
         let requesterLineId: string | null = null;
         const requesterUid = asText(data?.requestedByUid || data?.createdBy, "");
         if (requesterUid) {
@@ -562,7 +597,7 @@ export async function POST(request: Request) {
         }
 
         let targetIds = Array.from(configuredTargetIds);
-        if (data?.status === "approved" && requesterLineId) {
+        if (isApproved && requesterLineId) {
             if (isValidLineRecipientId(requesterLineId)) {
                 targetIds = [requesterLineId];
             } else {
@@ -575,7 +610,7 @@ export async function POST(request: Request) {
                 return NextResponse.json(
                     {
                         success: false,
-                        message: `à¸žà¸š LINE ID à¸£à¸¹à¸›à¹à¸šà¸šà¹„à¸¡à¹ˆà¸–à¸¹à¸à¸•à¹‰à¸­à¸‡: ${invalidConfiguredTargets.join(", ")}`,
+                        message: `Invalid LINE recipient ID format: ${invalidConfiguredTargets.join(", ")}`,
                         invalidTargets: invalidConfiguredTargets,
                     },
                     { status: 400 }
@@ -591,7 +626,7 @@ export async function POST(request: Request) {
                 return NextResponse.json(
                     {
                         success: false,
-                        message: "à¹„à¸¡à¹ˆà¸žà¸š LINE ID à¸‚à¸­à¸‡à¹à¸­à¸”à¸¡à¸´à¸™à¸—à¸µà¹ˆà¹€à¸¥à¸·à¸­à¸ à¸à¸£à¸¸à¸“à¸²à¸œà¸¹à¸à¸šà¸±à¸à¸Šà¸µ LINE à¹ƒà¸™à¸«à¸™à¹‰à¸² Users à¸à¹ˆà¸­à¸™",
+                        message: "Selected admin users do not have valid LINE recipient IDs configured",
                     },
                     { status: 400 }
                 );
@@ -603,79 +638,81 @@ export async function POST(request: Request) {
         const liffId = process.env.NEXT_PUBLIC_LIFF_ID || "";
         const approveUrl = `https://liff.line.me/${liffId}/approve?type=${type}&id=${data?.id || ""}`;
         const viewUrl = `https://liff.line.me/${liffId}/view?type=${type}&id=${data?.id || ""}`;
-        const normalizedKind = type ? resolveDocumentKind(type) : null;
-        const documentStatus = asText(data?.status, "") || undefined;
-        const isPending = normalizedKind ? isPendingDocumentStatus(normalizedKind, documentStatus) : documentStatus === "pending";
-        const isApproved = normalizedKind ? isApprovedDocumentStatus(normalizedKind, documentStatus) : documentStatus === "approved";
         const actionUrl = isPending ? approveUrl : viewUrl;
         const hasActionButton = (isPending || isApproved) && !!liffId;
+        const actionLabel = isPending ? "ตรวจสอบและอนุมัติ" : "ดูข้อมูลเอกสาร";
 
-        let altText = "à¹à¸ˆà¹‰à¸‡à¹€à¸•à¸·à¸­à¸™à¹€à¸­à¸à¸ªà¸²à¸£";
+        let altText = "แจ้งเตือนเอกสาร";
         let flexContents: unknown = {};
         if (type === "PO") {
             const poNo = asText(data?.poNumber, "-");
-            altText = isPending ? `PO à¸£à¸­à¸­à¸™à¸¸à¸¡à¸±à¸•à¸´ - ${poNo}` : `PO à¸­à¸™à¸¸à¸¡à¸±à¸•à¸´à¹à¸¥à¹‰à¸§ - ${poNo}`;
+            altText = isPending ? `PO รออนุมัติ - ${poNo}` : `PO อนุมัติแล้ว - ${poNo}`;
             flexContents = buildPOFlex({
                 isPending,
                 projectName,
                 data,
-                vendorData,
+                vendorData: resolvedVendorData,
                 approveUrl: actionUrl,
                 hasApproveButton: hasActionButton,
+                actionLabel,
             });
         } else if (type === "VO") {
             const voNo = asText(data?.voNumber, "-");
-            altText = isPending ? `VO à¸£à¸­à¸­à¸™à¸¸à¸¡à¸±à¸•à¸´ - ${voNo}` : `VO à¸­à¸™à¸¸à¸¡à¸±à¸•à¸´à¹à¸¥à¹‰à¸§ - ${voNo}`;
+            altText = isPending ? `VO รออนุมัติ - ${voNo}` : `VO อนุมัติแล้ว - ${voNo}`;
             flexContents = buildVOFlex({
                 isPending,
                 projectName,
                 data,
                 approveUrl: actionUrl,
                 hasApproveButton: hasActionButton,
+                actionLabel,
             });
         } else if (type === "WC") {
             const wcNo = asText(data?.wcNumber, "-");
-            altText = isPending ? `WC à¸£à¸­à¸­à¸™à¸¸à¸¡à¸±à¸•à¸´ - ${wcNo}` : `WC à¸­à¸™à¸¸à¸¡à¸±à¸•à¸´à¹à¸¥à¹‰à¸§ - ${wcNo}`;
+            altText = isPending ? `WC รออนุมัติ - ${wcNo}` : `WC อนุมัติแล้ว - ${wcNo}`;
             flexContents = buildWCFlex({
                 isPending,
                 projectName,
                 data,
-                vendorData,
+                vendorData: resolvedVendorData,
                 approveUrl: actionUrl,
                 hasApproveButton: hasActionButton,
+                actionLabel,
             });
         } else if (type === "PR") {
             const prNo = asText(data?.prNumber, "-");
-            altText = isPending ? `PR à¸£à¸­à¸­à¸™à¸¸à¸¡à¸±à¸•à¸´ - ${prNo}` : `PR à¸­à¸™à¸¸à¸¡à¸±à¸•à¸´à¹ƒà¸«à¹‰à¸ˆà¸±à¸”à¸«à¸² - ${prNo}`;
+            altText = isPending ? `PR รออนุมัติ - ${prNo}` : `PR อนุมัติให้จัดหา - ${prNo}`;
             flexContents = buildPRFlex({
                 isPending,
                 projectName,
                 data,
                 approveUrl: actionUrl,
                 hasApproveButton: hasActionButton,
+                actionLabel,
             });
         } else if (type === "PC") {
             const comparisonNo = asText(data?.comparisonNumber, "-");
-            altText = isPending ? `PC à¸£à¸­à¸­à¸™à¸¸à¸¡à¸±à¸•à¸´ - ${comparisonNo}` : `PC à¸­à¸™à¸¸à¸¡à¸±à¸•à¸´à¹à¸¥à¹‰à¸§ - ${comparisonNo}`;
+            altText = isPending ? `PC รออนุมัติ - ${comparisonNo}` : `PC อนุมัติแล้ว - ${comparisonNo}`;
             flexContents = buildPCFlex({
                 isPending,
                 projectName,
                 data,
                 approveUrl: actionUrl,
                 hasApproveButton: hasActionButton,
+                actionLabel,
             });
         } else {
-            altText = `à¹à¸ˆà¹‰à¸‡à¹€à¸•à¸·à¸­à¸™à¹€à¸­à¸à¸ªà¸²à¸£ - ${asText(type, "N/A")}`;
+            altText = `แจ้งเตือนเอกสาร - ${asText(type, "N/A")}`;
             flexContents = {
                 type: "bubble",
                 body: {
                     type: "box",
                     layout: "vertical",
                     contents: [
-                        { type: "text", text: asText(projectName, "à¹„à¸¡à¹ˆà¸£à¸°à¸šà¸¸à¹‚à¸„à¸£à¸‡à¸à¸²à¸£"), size: "sm", color: COLOR.title, weight: "bold", wrap: true },
+                        { type: "text", text: asText(projectName, "ไม่ระบุโครงการ"), size: "sm", color: COLOR.title, weight: "bold", wrap: true },
                         { type: "separator", color: COLOR.border, margin: "md" },
-                        infoRow("à¸›à¸£à¸°à¹€à¸ à¸—à¹€à¸­à¸à¸ªà¸²à¸£", normalizedKind ? getDocumentKindLabel(normalizedKind) : asText(type, "à¹„à¸¡à¹ˆà¸£à¸°à¸šà¸¸")),
-                        infoRow("à¸ªà¸–à¸²à¸™à¸°", asText(data?.status, "-"), { valueColor: COLOR.title, valueWeight: "bold" }),
+                        infoRow("ประเภทเอกสาร", normalizedKind ? getNotifyDocumentLabel(normalizedKind) : asText(type, "ไม่ระบุ")),
+                        infoRow("สถานะ", asText(data?.status, "-"), { valueColor: COLOR.title, valueWeight: "bold" }),
                     ],
                     spacing: "md",
                 },
@@ -685,36 +722,40 @@ export async function POST(request: Request) {
             };
         }
 
-        if (isApproved && flexContents && typeof flexContents === "object") {
-            const bubble = flexContents as { footer?: { contents?: Array<{ type?: string; action?: { label?: string } }> } };
-            const primaryButton = bubble.footer?.contents?.find((item) => item?.type === "button");
-            if (primaryButton?.action) {
-                primaryButton.action.label = "à¸”à¸¹à¸‚à¹‰à¸­à¸¡à¸¹à¸¥à¹€à¸­à¸à¸ªà¸²à¸£";
-            }
-        }
-
         const failedTargets: { targetId: string; status: number; error: unknown; reason: string }[] = [];
         const successTargets: string[] = [];
-        for (const targetId of targetIds) {
-            const payload = {
-                to: targetId,
-                messages: [
-                    {
-                        type: "flex",
-                        altText,
-                        contents: flexContents,
-                    },
-                ],
-            };
-
-            const lineRes = await fetch("https://api.line.me/v2/bot/message/push", {
+        const sendPushMessage = async (targetId: string, messages: unknown[]) => {
+            return fetch("https://api.line.me/v2/bot/message/push", {
                 method: "POST",
                 headers: {
                     "Content-Type": "application/json",
                     Authorization: `Bearer ${lineToken}`,
                 },
-                body: JSON.stringify(payload),
+                body: JSON.stringify({
+                    to: targetId,
+                    messages,
+                }),
             });
+        };
+
+        for (const targetId of targetIds) {
+            if (!isValidLineRecipientId(targetId)) {
+                failedTargets.push({
+                    targetId,
+                    status: 400,
+                    reason: "Invalid LINE recipient ID format",
+                    error: { message: "Skipped before LINE API call because recipient ID format is invalid" },
+                });
+                continue;
+            }
+
+            const lineRes = await sendPushMessage(targetId, [
+                {
+                    type: "flex",
+                    altText,
+                    contents: flexContents,
+                },
+            ]);
 
             if (!lineRes.ok) {
                 let errorData: unknown = null;
@@ -723,10 +764,45 @@ export async function POST(request: Request) {
                 } catch {
                     errorData = { status: lineRes.status, statusText: lineRes.statusText };
                 }
+                const reason = extractLineErrorReason(errorData);
+                const canRetryAsText = lineRes.status === 400 && shouldRetryAsPlainText(errorData);
+
+                if (canRetryAsText) {
+                    const fallbackRes = await sendPushMessage(targetId, [
+                        {
+                            type: "text",
+                            text: buildPlainTextMessage({ type, projectName, data, vendorData: resolvedVendorData }),
+                        },
+                    ]);
+
+                    if (fallbackRes.ok) {
+                        successTargets.push(targetId);
+                        continue;
+                    }
+
+                    let fallbackErrorData: unknown = null;
+                    try {
+                        fallbackErrorData = await fallbackRes.json();
+                    } catch {
+                        fallbackErrorData = { status: fallbackRes.status, statusText: fallbackRes.statusText };
+                    }
+
+                    failedTargets.push({
+                        targetId,
+                        status: fallbackRes.status,
+                        reason: extractLineErrorReason(fallbackErrorData),
+                        error: {
+                            flexError: errorData,
+                            fallbackError: fallbackErrorData,
+                        },
+                    });
+                    continue;
+                }
+
                 failedTargets.push({
                     targetId,
                     status: lineRes.status,
-                    reason: extractLineErrorReason(errorData),
+                    reason,
                     error: errorData,
                 });
             } else {
@@ -736,11 +812,11 @@ export async function POST(request: Request) {
 
         if (successTargets.length === 0) {
             console.error("LINE API Error:", failedTargets);
-            const firstFailedReason = failedTargets[0]?.reason || "à¹„à¸¡à¹ˆà¸ªà¸²à¸¡à¸²à¸£à¸–à¸£à¸°à¸šà¸¸à¸ªà¸²à¹€à¸«à¸•à¸¸à¹„à¸”à¹‰";
+            const firstFailedReason = failedTargets[0]?.reason || "ไม่สามารถระบุสาเหตุได้";
             return NextResponse.json(
                 {
                     success: false,
-                    message: `à¸ªà¹ˆà¸‡à¹à¸ˆà¹‰à¸‡à¹€à¸•à¸·à¸­à¸™ LINE à¹„à¸¡à¹ˆà¸ªà¸³à¹€à¸£à¹‡à¸ˆ (${failedTargets.length} à¸œà¸¹à¹‰à¸£à¸±à¸š): ${firstFailedReason}`,
+                    message: `LINE notification failed for ${failedTargets.length} recipient(s): ${firstFailedReason}`,
                     firstFailedReason,
                     failedTargets,
                 },
@@ -750,11 +826,11 @@ export async function POST(request: Request) {
 
         if (failedTargets.length > 0) {
             console.warn("LINE API Partial Success:", { successTargets, failedTargets });
-            const firstFailedReason = failedTargets[0]?.reason || "à¹„à¸¡à¹ˆà¸ªà¸²à¸¡à¸²à¸£à¸–à¸£à¸°à¸šà¸¸à¸ªà¸²à¹€à¸«à¸•à¸¸à¹„à¸”à¹‰";
+            const firstFailedReason = failedTargets[0]?.reason || "ไม่สามารถระบุสาเหตุได้";
             return NextResponse.json({
                 success: true,
                 partial: true,
-                message: `à¸ªà¹ˆà¸‡à¹à¸ˆà¹‰à¸‡à¹€à¸•à¸·à¸­à¸™à¹„à¸”à¹‰ ${successTargets.length} à¸£à¸²à¸¢à¸à¸²à¸£ à¹à¸¥à¸°à¹„à¸¡à¹ˆà¸ªà¸³à¹€à¸£à¹‡à¸ˆ ${failedTargets.length} à¸£à¸²à¸¢à¸à¸²à¸£: ${firstFailedReason}`,
+                message: `LINE notification sent to ${successTargets.length} recipient(s) and failed for ${failedTargets.length}: ${firstFailedReason}`,
                 recipientCount: successTargets.length,
                 failedCount: failedTargets.length,
                 firstFailedReason,
@@ -764,7 +840,7 @@ export async function POST(request: Request) {
 
         return NextResponse.json({
             success: true,
-            message: "à¸ªà¹ˆà¸‡à¹à¸ˆà¹‰à¸‡à¹€à¸•à¸·à¸­à¸™à¸ªà¸³à¹€à¸£à¹‡à¸ˆ",
+            message: "ส่งแจ้งเตือนสำเร็จ",
             recipientCount: successTargets.length,
         });
     } catch (error: unknown) {

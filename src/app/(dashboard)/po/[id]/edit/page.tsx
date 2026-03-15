@@ -308,6 +308,23 @@ export default function EditPOPage({ params }: { params: Promise<{ id: string }>
             const poRef = doc(db, "purchase_orders", resolvedParams.id);
             await updateDoc(poRef, updatedPO);
 
+            if (status === "pending") {
+                try {
+                    await fetch("/api/line/notify", {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({
+                            type: "PO",
+                            data: { ...po, ...updatedPO, id: resolvedParams.id },
+                            vendorData: selectedVendor,
+                            projectName: currentProject?.name,
+                        }),
+                    });
+                } catch (error) {
+                    console.error("Line notification failed:", error);
+                }
+            }
+
             setSuccess(true);
             setTimeout(() => {
                 router.push(`/po/${resolvedParams.id}`);

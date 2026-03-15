@@ -150,7 +150,7 @@ export default function LiffDashboard() {
     }
 
     return (
-        <div className="min-h-screen bg-slate-100 pb-20">
+        <div className="min-h-screen bg-slate-100 ">
             <header className="sticky top-0 z-40 border-b border-slate-200 bg-white">
                 <div className="mx-auto w-full max-w-3xl px-4 py-4">
                     <div className="flex items-start justify-between gap-4">

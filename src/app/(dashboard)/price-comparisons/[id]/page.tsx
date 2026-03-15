@@ -1,6 +1,6 @@
 "use client";
 
-import { use, useEffect, useState } from "react";
+import { use, useEffect, useState, type ReactNode } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
@@ -64,6 +64,44 @@ function getCreatedAtMillis(value: unknown) {
     if (typeof timestamp.toDate === "function") return timestamp.toDate().getTime();
     if (typeof timestamp.seconds === "number") return timestamp.seconds * 1000;
     return 0;
+}
+
+function DetailSection({
+    title,
+    actions,
+    children,
+}: {
+    title: string;
+    actions?: ReactNode;
+    children: ReactNode;
+}) {
+    return (
+        <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+            <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+                <h2 className="text-base font-semibold text-slate-950">{title}</h2>
+                {actions ? <div className="shrink-0">{actions}</div> : null}
+            </div>
+            <div className="mt-4">{children}</div>
+        </section>
+    );
+}
+
+function DetailRow({
+    label,
+    value,
+    className = "",
+}: {
+    label: string;
+    value: ReactNode;
+    className?: string;
+}) {
+    return (
+        <div className={`flex flex-wrap items-start gap-x-2 gap-y-1 py-1.5 ${className}`}>
+            <span className="text-sm text-slate-500">{label}</span>
+            <span className="text-sm text-slate-400">:</span>
+            <div className="min-w-0 text-sm font-semibold text-slate-950">{value}</div>
+        </div>
+    );
 }
 
 export default function PriceComparisonDetailPage({ params }: { params: Promise<{ id: string }> }) {
@@ -256,7 +294,7 @@ export default function PriceComparisonDetailPage({ params }: { params: Promise<
     const recommendedQuoteId = comparison.recommendedQuoteId || comparison.autoRecommendedQuoteId || "";
 
     return (
-        <div className="mx-auto max-w-7xl space-y-6">
+        <div className="mx-auto max-w-7xl space-y-5">
             <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
                 <div className="flex items-center gap-4">
                     <Link href="/price-comparisons" className="rounded-full p-2 text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-600">
@@ -268,42 +306,42 @@ export default function PriceComparisonDetailPage({ params }: { params: Promise<
                     </div>
                 </div>
 
-                <div className="flex flex-wrap gap-3">
-                    <Link href={`/price-comparisons/${comparison.id}/document`} className="inline-flex items-center justify-center rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50">
+                <div className="flex flex-wrap gap-2.5">
+                    <Link href={`/price-comparisons/${comparison.id}/document`} className="inline-flex items-center justify-center rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50">
                         <FileText size={16} className="mr-2" />
                         ดูแบบเอกสาร
                     </Link>
                     {(comparison.status === "draft" || comparison.status === "rejected") ? (
-                        <Link href={`/price-comparisons/${comparison.id}/edit`} className="inline-flex items-center justify-center rounded-xl border border-indigo-200 bg-indigo-50 px-4 py-2.5 text-sm font-semibold text-indigo-700 transition hover:bg-indigo-100">
+                        <Link href={`/price-comparisons/${comparison.id}/edit`} className="inline-flex items-center justify-center rounded-xl border border-indigo-200 bg-indigo-50 px-4 py-2 text-sm font-semibold text-indigo-700 transition hover:bg-indigo-100">
                             <Edit size={16} className="mr-2" />
                             แก้ไขเอกสาร
                         </Link>
                     ) : null}
                     {canDelete ? (
-                        <button type="button" onClick={() => void handleDelete()} disabled={deleting} className="inline-flex items-center justify-center rounded-xl border border-rose-200 bg-white px-4 py-2.5 text-sm font-semibold text-rose-600 transition hover:bg-rose-50 disabled:opacity-50">
+                        <button type="button" onClick={() => void handleDelete()} disabled={deleting} className="inline-flex items-center justify-center rounded-xl border border-rose-200 bg-white px-4 py-2 text-sm font-semibold text-rose-600 transition hover:bg-rose-50 disabled:opacity-50">
                             {deleting ? <Loader2 size={16} className="mr-2 animate-spin" /> : <Trash2 size={16} className="mr-2" />}
                             ลบเอกสาร
                         </button>
                     ) : null}
                     {targetDetailHref ? (
-                        <Link href={targetDetailHref} className="inline-flex items-center justify-center rounded-xl border border-violet-200 bg-violet-50 px-4 py-2.5 text-sm font-semibold text-violet-700 transition hover:bg-violet-100">
+                        <Link href={targetDetailHref} className="inline-flex items-center justify-center rounded-xl border border-violet-200 bg-violet-50 px-4 py-2 text-sm font-semibold text-violet-700 transition hover:bg-violet-100">
                             <FileSearch size={16} className="mr-2" />
                             ดู{targetDocumentLabel}ที่สร้างแล้ว
                         </Link>
                     ) : null}
                     {targetCreateHref ? (
-                        <Link href={targetCreateHref} className="inline-flex items-center justify-center rounded-xl bg-violet-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-violet-500">
+                        <Link href={targetCreateHref} className="inline-flex items-center justify-center rounded-xl bg-violet-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-violet-500">
                             <FileSearch size={16} className="mr-2" />
                             ออก{targetDocumentLabel}
                         </Link>
                     ) : null}
                     {isPending && canApprove ? (
                         <>
-                            <button type="button" onClick={() => void handleDecision("rejected")} disabled={actionLoading} className="inline-flex items-center justify-center rounded-xl border border-rose-200 bg-white px-4 py-2.5 text-sm font-semibold text-rose-600 transition hover:bg-rose-50 disabled:opacity-50">
+                            <button type="button" onClick={() => void handleDecision("rejected")} disabled={actionLoading} className="inline-flex items-center justify-center rounded-xl border border-rose-200 bg-white px-4 py-2 text-sm font-semibold text-rose-600 transition hover:bg-rose-50 disabled:opacity-50">
                                 <XCircle size={16} className="mr-2" />
                                 ไม่อนุมัติ
                             </button>
-                            <button type="button" onClick={() => void handleDecision("approved")} disabled={actionLoading} className="inline-flex items-center justify-center rounded-xl bg-emerald-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-emerald-500 disabled:opacity-50">
+                            <button type="button" onClick={() => void handleDecision("approved")} disabled={actionLoading} className="inline-flex items-center justify-center rounded-xl bg-emerald-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-emerald-500 disabled:opacity-50">
                                 {actionLoading ? <Loader2 size={16} className="mr-2 animate-spin" /> : <CheckCircle size={16} className="mr-2" />}
                                 อนุมัติผลเทียบราคา
                             </button>
@@ -333,68 +371,42 @@ export default function PriceComparisonDetailPage({ params }: { params: Promise<
                 </div>
             </div>
 
-            <div className="grid gap-6 xl:grid-cols-[0.62fr,0.38fr]">
+            <div className="grid gap-5 xl:grid-cols-[0.64fr,0.36fr]">
                 <div className="space-y-6">
-                    <section className="rounded-xl border border-slate-200 bg-white p-5">
-                        <h2 className="text-base font-semibold text-slate-950">ข้อมูลเอกสาร</h2>
-                        <div className="mt-4 grid gap-3 md:grid-cols-2">
-                            <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm">
-                                <span className="text-slate-500">เลขที่เอกสาร</span>
-                                <p className="mt-1 font-semibold text-slate-950">{comparison.comparisonNumber}</p>
-                            </div>
-                            <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm">
-                                <span className="text-slate-500">PR ต้นทาง</span>
-                                <p className="mt-1 font-semibold text-slate-950">{comparison.prNumber || "-"}</p>
-                            </div>
-                            <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm">
-                                <span className="text-slate-500">ผู้ขอ</span>
-                                <p className="mt-1 font-semibold text-slate-950">{comparison.requestedByName || comparison.requestedByUid || "-"}</p>
-                            </div>
-                            <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm">
-                                <span className="text-slate-500">วันที่จัดทำ</span>
-                                <p className="mt-1 font-semibold text-slate-950">{formatDocumentDate(comparison.createdAt)}</p>
-                            </div>
+                    <DetailSection title="ข้อมูลเอกสาร">
+                        <div className="grid gap-x-8 gap-y-1 md:grid-cols-2">
+                            <DetailRow label="เลขที่เอกสาร" value={comparison.comparisonNumber} />
+                            <DetailRow label="PR ต้นทาง" value={comparison.prNumber || "-"} />
+                            <DetailRow label="ผู้ขอ" value={comparison.requestedByName || comparison.requestedByUid || "-"} />
+                            <DetailRow label="วันที่จัดทำ" value={formatDocumentDate(comparison.createdAt)} />
                         </div>
-                    </section>
+                    </DetailSection>
 
-                    <section className="rounded-xl border border-slate-200 bg-white p-5">
-                        <h2 className="text-base font-semibold text-slate-950">ข้อมูลอ้างอิงจาก PR</h2>
-                        <div className="mt-4 space-y-4">
+                    <DetailSection title="ข้อมูลอ้างอิงจาก PR">
+                        <div className="space-y-4">
                             <div>
                                 <p className="text-sm font-semibold text-slate-950">{comparison.title}</p>
                                 {sourceRequisition?.reason ? (
                                     <p className="mt-2 whitespace-pre-wrap text-sm leading-7 text-slate-600">{sourceRequisition.reason}</p>
                                 ) : null}
                             </div>
-                            <div className="grid gap-3 md:grid-cols-3">
-                                <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm">
-                                    <span className="text-slate-500">ประเภทคำขอ</span>
-                                    <p className="mt-1 font-semibold text-slate-950">{comparison.requestType === "service" ? "ขอจ้าง / ขอรับบริการ" : "ขอซื้อวัสดุ"}</p>
-                                </div>
-                                <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm">
-                                    <span className="text-slate-500">เอกสารปลายทาง</span>
-                                    <p className="mt-1 font-semibold text-slate-950">{getFulfillmentTypeLabel(comparison.fulfillmentType)}</p>
-                                </div>
-                                <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm">
-                                    <span className="text-slate-500">งบประมาณอ้างอิง</span>
-                                    <p className="mt-1 font-semibold text-slate-950">{formatMoney(Number(sourceRequisition?.totalAmount || 0))}</p>
-                                </div>
+                            <div className="grid gap-x-8 gap-y-1 md:grid-cols-2">
+                                <DetailRow label="ประเภทคำขอ" value={comparison.requestType === "service" ? "ขอจ้าง / ขอรับบริการ" : "ขอซื้อวัสดุ"} />
+                                <DetailRow label="เอกสารปลายทาง" value={getFulfillmentTypeLabel(comparison.fulfillmentType)} />
+                                <DetailRow label="งบประมาณอ้างอิง" value={formatMoney(Number(sourceRequisition?.totalAmount || 0))} />
                             </div>
                         </div>
-                    </section>
+                    </DetailSection>
 
-                    <section className="rounded-xl border border-slate-200 bg-white p-5">
-                        <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
-                            <div>
-                                <h2 className="text-base font-semibold text-slate-950">ข้อมูลผู้เสนอราคา</h2>
-                                <p className="mt-1 text-sm text-slate-500">หน้าข้อมูลใช้สำหรับตรวจสอบรายละเอียดเชิงลึก ส่วนเอกสารทางการอยู่ที่หน้าแบบเอกสาร</p>
-                            </div>
+                    <DetailSection
+                        title="ข้อมูลผู้เสนอราคา"
+                        actions={(
                             <Link href={`/price-comparisons/${comparison.id}/document`} className="text-sm font-semibold text-indigo-600 hover:text-indigo-800">
                                 เปิดแบบเอกสาร
                             </Link>
-                        </div>
-
-                        <div className="mt-4 overflow-hidden rounded-xl border border-slate-200">
+                        )}
+                    >
+                        <div className="overflow-hidden rounded-lg border border-slate-200">
                             <div className="overflow-x-auto">
                                 <table className="min-w-full divide-y divide-slate-200">
                                     <thead className="bg-slate-100">
@@ -432,7 +444,7 @@ export default function PriceComparisonDetailPage({ params }: { params: Promise<
 
                         <div className="mt-4 space-y-3">
                             {comparison.quotes.map((quote, index) => (
-                                <details key={quote.id} className="rounded-xl border border-slate-200 bg-slate-50 open:bg-white">
+                                <details key={quote.id} className="rounded-lg border border-slate-200 bg-slate-50 open:bg-white">
                                     <summary className="cursor-pointer list-none px-4 py-3">
                                         <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
                                             <div>
@@ -451,55 +463,51 @@ export default function PriceComparisonDetailPage({ params }: { params: Promise<
                                         <div className="mt-4">
                                             <QuoteTotalsGrid quote={quote} />
                                         </div>
-                                        {quote.note ? (
-                                            <div className="mt-4 rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700">
-                                                {quote.note}
-                                            </div>
-                                        ) : null}
+                                        <div className="mt-4 grid gap-x-8 gap-y-1 md:grid-cols-2">
+                                            <DetailRow label="เลขอ้างอิง" value={quote.quoteRef || "-"} />
+                                            <DetailRow label="VAT" value={getVatModeLabel(quote.vatMode)} />
+                                            <DetailRow label="เครดิต" value={`${quote.creditDays || 0} วัน`} />
+                                            <DetailRow label="ส่งมอบ" value={`${quote.deliveryDays || 0} วัน`} />
+                                            {quote.note ? <DetailRow label="หมายเหตุ" value={quote.note} className="md:col-span-2" /> : null}
+                                        </div>
                                     </div>
                                 </details>
                             ))}
                         </div>
-                    </section>
+                    </DetailSection>
                 </div>
 
                 <div className="space-y-6">
-                    <section className="rounded-xl border border-slate-200 bg-white p-5">
-                        <h2 className="text-base font-semibold text-slate-950">ผลที่เสนออนุมัติ</h2>
-                        <div className="mt-4 space-y-3 text-sm text-slate-600">
-                            <p>ผู้เสนอที่เลือก: <span className="font-semibold text-slate-950">{comparison.recommendedSupplierName || "-"}</span></p>
-                            <p>มูลค่าที่เลือก: <span className="font-semibold text-slate-950">{formatMoney(Number(comparison.recommendedTotalAmount || 0))}</span></p>
-                            <p>เกณฑ์การตัดสิน: <span className="font-semibold text-slate-950">{getRecommendationTypeLabel(comparison.recommendationType)}</span></p>
-                            {recommendedQuote ? (
-                                <p>VAT: <span className="font-semibold text-slate-950">{getVatModeLabel(recommendedQuote.vatMode)}</span></p>
-                            ) : null}
+                    <DetailSection title="ผลที่เสนออนุมัติ">
+                        <div className="space-y-1">
+                            <DetailRow label="ผู้เสนอที่เลือก" value={comparison.recommendedSupplierName || "-"} />
+                            <DetailRow label="มูลค่าที่เลือก" value={formatMoney(Number(comparison.recommendedTotalAmount || 0))} />
+                            <DetailRow label="เกณฑ์การตัดสิน" value={getRecommendationTypeLabel(comparison.recommendationType)} />
+                            {recommendedQuote ? <DetailRow label="VAT" value={getVatModeLabel(recommendedQuote.vatMode)} /> : null}
+                            <DetailRow label="เหตุผล" value={comparison.recommendationReason || "-"} className="pt-2" />
                         </div>
-                        <div className="mt-4 rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700">
-                            {comparison.recommendationReason || "-"}
-                        </div>
-                    </section>
+                    </DetailSection>
 
-                    <section className="rounded-xl border border-slate-200 bg-white p-5">
-                        <h2 className="text-base font-semibold text-slate-950">การเชื่อมโยงเอกสาร</h2>
-                        <div className="mt-4 space-y-4">
-                            <div className="rounded-lg border border-slate-200 bg-slate-50 p-4 text-sm text-slate-600">
+                    <DetailSection title="การเชื่อมโยงเอกสาร">
+                        <div className="space-y-5 text-sm">
+                            <div>
                                 <p className="font-semibold text-slate-950">PR ต้นทาง</p>
                                 {sourceRequisition ? (
-                                    <div className="mt-3 space-y-2">
+                                    <div className="mt-2 space-y-2">
                                         <DocumentStatus label={getPurchaseRequisitionStatusMeta(sourceRequisition.status).label} tone="info" />
                                         <Link href={`/pr/${comparison.prId}`} className="inline-flex font-semibold text-indigo-600 hover:text-indigo-800">
                                             เปิดดู PR ต้นทาง
                                         </Link>
                                     </div>
                                 ) : (
-                                    <p className="mt-3">ไม่พบข้อมูล PR ต้นทาง</p>
+                                    <p className="mt-2 text-slate-600">ไม่พบข้อมูล PR ต้นทาง</p>
                                 )}
                             </div>
 
-                            <div className="rounded-lg border border-slate-200 bg-slate-50 p-4 text-sm text-slate-600">
+                            <div className="border-t border-slate-200 pt-4">
                                 <p className="font-semibold text-slate-950">เอกสารปลายทาง</p>
-                                <div className="mt-3 space-y-2">
-                                    <p>ประเภท: <span className="font-semibold text-slate-950">{getFulfillmentTypeLabel(comparison.fulfillmentType)}</span></p>
+                                <div className="mt-2 space-y-2 text-slate-600">
+                                    <DetailRow label="ประเภท" value={getFulfillmentTypeLabel(comparison.fulfillmentType)} />
                                     {linkedTargetId ? (
                                         <Link href={targetDetailHref} className="inline-flex font-semibold text-violet-600 hover:text-violet-800">
                                             เปิดดู{targetDocumentLabel}ที่สร้างแล้ว
@@ -514,14 +522,13 @@ export default function PriceComparisonDetailPage({ params }: { params: Promise<
                                 </div>
                             </div>
                         </div>
-                    </section>
+                    </DetailSection>
 
-                    <section className="rounded-xl border border-slate-200 bg-white p-5">
-                        <h2 className="text-base font-semibold text-slate-950">ประวัติการอนุมัติ</h2>
+                    <DetailSection title="ประวัติการอนุมัติ">
                         <div className="mt-4">
                             <ApprovalTrailTable approvalTrail={comparison.approvalTrail} />
                         </div>
-                    </section>
+                    </DetailSection>
                 </div>
             </div>
         </div>

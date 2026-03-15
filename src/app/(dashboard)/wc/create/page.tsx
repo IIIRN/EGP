@@ -437,6 +437,8 @@ export default function CreateWCPage() {
             }
 
             const createdByUid = userProfile?.uid || user.uid;
+            const requestedByUid = sourceRequisition?.requestedByUid || sourceRequisition?.createdBy || createdByUid;
+            const requestedByName = sourceRequisition?.requestedByName || userProfile?.displayName || userProfile?.email || user.email || createdByUid;
 
             let signatureData: SignatureOption | null = null;
             if (companySettings?.signatures && selectedSignatureId) {
@@ -449,6 +451,8 @@ export default function CreateWCPage() {
                 projectId: currentProject.id,
                 ...(sourceRequisition?.id ? { sourcePrId: sourceRequisition.id } : {}),
                 ...(sourceComparison?.id ? { sourceComparisonId: sourceComparison.id } : {}),
+                requestedByUid,
+                requestedByName,
                 vendorId: vendorId || "unknown",
                 vendorName: selectedVendor ? selectedVendor.fullName : "ไม่ระบุผู้รับจ้าง",
                 title: title.trim(),

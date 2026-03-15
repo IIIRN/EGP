@@ -407,6 +407,8 @@ export default function CreatePOPage() {
 
             // In some cases userProfile isn't set depending on database state, so use primary firebase user uid
             const createdByUid = userProfile?.uid || user.uid;
+            const requestedByUid = sourceRequisition?.requestedByUid || sourceRequisition?.createdBy || createdByUid;
+            const requestedByName = sourceRequisition?.requestedByName || userProfile?.displayName || userProfile?.email || user.email || createdByUid;
 
             let signatureData: SignatureOption | null = null;
             if (companySettings?.signatures && selectedSignatureId) {
@@ -419,6 +421,8 @@ export default function CreatePOPage() {
                 projectId: currentProject.id,
                 ...(sourceRequisition?.id ? { sourcePrId: sourceRequisition.id } : {}),
                 ...(sourceComparison?.id ? { sourceComparisonId: sourceComparison.id } : {}),
+                requestedByUid,
+                requestedByName,
                 vendorId: vendorId || "unknown",
                 vendorName: selectedVendor ? selectedVendor.name : "ไม่ระบุผู้ขาย",
                 items: sanitizedItems,

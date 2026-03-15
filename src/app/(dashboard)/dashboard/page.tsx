@@ -61,27 +61,39 @@ const getStatusMeta = (status?: string) => {
     return { label: "ฉบับร่าง", className: "bg-slate-100 text-slate-700 border border-slate-200" };
 };
 
+const INITIAL_STATS = {
+    pendingPR: 0,
+    totalPR: 0,
+    pendingPC: 0,
+    totalPC: 0,
+    pendingPO: 0,
+    totalPO: 0,
+    approvedPOTotal: 0,
+    pendingWC: 0,
+    totalWC: 0,
+    approvedWCTotal: 0,
+    pendingVO: 0,
+    totalVO: 0,
+    approvedVOTotal: 0,
+    totalVendors: 0,
+};
+
 export default function MainDashboard() {
     const { currentProject } = useProject();
     const { userProfile } = useAuth();
 
-    const [stats, setStats] = useState({
-        pendingPR: 0,
-        pendingPC: 0,
-        pendingPO: 0,
-        approvedPOTotal: 0,
-        pendingWC: 0,
-        approvedWCTotal: 0,
-        pendingVO: 0,
-        approvedVOTotal: 0,
-        totalVendors: 0
-    });
+    const [stats, setStats] = useState(INITIAL_STATS);
 
     const [recentPOs, setRecentPOs] = useState<PurchaseOrder[]>([]);
     const [recentWCs, setRecentWCs] = useState<WorkContract[]>([]);
 
     useEffect(() => {
-        if (!currentProject) return;
+        if (!currentProject) {
+            setStats(INITIAL_STATS);
+            setRecentPOs([]);
+            setRecentWCs([]);
+            return;
+        }
 
         const prQuery = query(
             collection(db, "purchase_requisitions"),
@@ -95,7 +107,7 @@ export default function MainDashboard() {
                 if (pr.status === "pending_need_approval") pendingCount++;
             });
 
-            setStats(prev => ({ ...prev, pendingPR: pendingCount }));
+            setStats(prev => ({ ...prev, pendingPR: pendingCount, totalPR: snapshot.size }));
         });
 
         const pcQuery = query(
@@ -110,7 +122,7 @@ export default function MainDashboard() {
                 if (pc.status === "pending_approval") pendingCount++;
             });
 
-            setStats(prev => ({ ...prev, pendingPC: pendingCount }));
+            setStats(prev => ({ ...prev, pendingPC: pendingCount, totalPC: snapshot.size }));
         });
 
         // Fetch POs
@@ -140,7 +152,7 @@ export default function MainDashboard() {
             });
             setRecentPOs(poList.slice(0, 5));
 
-            setStats(prev => ({ ...prev, pendingPO: pendingCount, approvedPOTotal: approvedSum }));
+            setStats(prev => ({ ...prev, pendingPO: pendingCount, totalPO: snapshot.size, approvedPOTotal: approvedSum }));
         });
 
         // Fetch WCs
@@ -169,7 +181,7 @@ export default function MainDashboard() {
             });
             setRecentWCs(wcList.slice(0, 5));
 
-            setStats(prev => ({ ...prev, pendingWC: pendingCount, approvedWCTotal: approvedSum }));
+            setStats(prev => ({ ...prev, pendingWC: pendingCount, totalWC: snapshot.size, approvedWCTotal: approvedSum }));
         });
 
         // Fetch VOs
@@ -189,7 +201,7 @@ export default function MainDashboard() {
                 }
             });
 
-            setStats(prev => ({ ...prev, pendingVO: pendingCount, approvedVOTotal: approvedSum }));
+            setStats(prev => ({ ...prev, pendingVO: pendingCount, totalVO: snapshot.size, approvedVOTotal: approvedSum }));
         });
 
         // Fetch Total Vendors (Not project specific, total in system so they can be available)
@@ -241,7 +253,7 @@ export default function MainDashboard() {
                         <div className="rounded-xl border border-blue-200 bg-blue-50/70 p-4">
                             <p className="text-xs uppercase tracking-[0.14em] text-slate-500">Pending Approvals</p>
                             <p className="mt-2 text-2xl font-semibold text-slate-900">{pendingApprovals}</p>
-                            <p className="mt-1 text-xs text-slate-500">PO, WC และ VO ที่รอดำเนินการ</p>
+                            <p className="mt-1 text-xs text-slate-500">PR, PC, PO, WC และ VO ที่รออนุมัติ</p>
                         </div>
                         <div className="rounded-xl border border-emerald-200 bg-emerald-50/70 p-4">
                             <p className="text-xs uppercase tracking-[0.14em] text-slate-500">Approved Commitments</p>
@@ -315,6 +327,7 @@ export default function MainDashboard() {
                     </div>
                     <p className="text-sm text-slate-500">PR รออนุมัติ</p>
                     <p className="mt-1 text-2xl font-semibold text-slate-900">{stats.pendingPR}</p>
+                    <p className="mt-1 text-xs text-slate-500">ทั้งหมด {stats.totalPR} เอกสาร</p>
                 </div>
 
                 <div className="rounded-xl border border-sky-200 bg-gradient-to-b from-white to-sky-50/40 p-5 shadow-sm">
@@ -323,6 +336,7 @@ export default function MainDashboard() {
                     </div>
                     <p className="text-sm text-slate-500">PC รออนุมัติ</p>
                     <p className="mt-1 text-2xl font-semibold text-slate-900">{stats.pendingPC}</p>
+                    <p className="mt-1 text-xs text-slate-500">ทั้งหมด {stats.totalPC} เอกสาร</p>
                 </div>
 
                 <div className="rounded-xl border border-blue-200 bg-gradient-to-b from-white to-blue-50/40 p-5 shadow-sm">
@@ -331,6 +345,7 @@ export default function MainDashboard() {
                     </div>
                     <p className="text-sm text-slate-500">PO รออนุมัติ</p>
                     <p className="mt-1 text-2xl font-semibold text-slate-900">{stats.pendingPO}</p>
+                    <p className="mt-1 text-xs text-slate-500">ทั้งหมด {stats.totalPO} เอกสาร</p>
                 </div>
 
                 <div className="rounded-xl border border-emerald-200 bg-gradient-to-b from-white to-emerald-50/40 p-5 shadow-sm">
@@ -339,6 +354,7 @@ export default function MainDashboard() {
                     </div>
                     <p className="text-sm text-slate-500">WC รออนุมัติ</p>
                     <p className="mt-1 text-2xl font-semibold text-slate-900">{stats.pendingWC}</p>
+                    <p className="mt-1 text-xs text-slate-500">ทั้งหมด {stats.totalWC} เอกสาร</p>
                 </div>
 
                 <div className="rounded-xl border border-amber-200 bg-gradient-to-b from-white to-amber-50/40 p-5 shadow-sm">
@@ -347,6 +363,7 @@ export default function MainDashboard() {
                     </div>
                     <p className="text-sm text-slate-500">VO รออนุมัติ</p>
                     <p className="mt-1 text-2xl font-semibold text-slate-900">{stats.pendingVO}</p>
+                    <p className="mt-1 text-xs text-slate-500">ทั้งหมด {stats.totalVO} เอกสาร</p>
                 </div>
 
                 <div className="rounded-xl border border-violet-200 bg-gradient-to-b from-white to-violet-50/40 p-5 shadow-sm">
