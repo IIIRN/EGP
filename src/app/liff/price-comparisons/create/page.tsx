@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { ArrowLeft, FileText, Loader2 } from "lucide-react";
 import { collection, getDocs, query, where } from "firebase/firestore";
@@ -40,7 +40,7 @@ function formatCurrency(value: number) {
     });
 }
 
-export default function LiffCreatePriceComparisonPage() {
+function LiffCreatePriceComparisonContent() {
     const { currentProject } = useProject();
     const searchParams = useSearchParams();
     const requisitionId = searchParams.get("prId") || "";
@@ -191,5 +191,19 @@ export default function LiffCreatePriceComparisonPage() {
                 })}
             </div>
         </div>
+    );
+}
+
+export default function LiffCreatePriceComparisonPage() {
+    return (
+        <Suspense
+            fallback={
+                <div className="flex min-h-screen items-center justify-center bg-slate-100 p-8">
+                    <Loader2 className="h-10 w-10 animate-spin text-blue-600" />
+                </div>
+            }
+        >
+            <LiffCreatePriceComparisonContent />
+        </Suspense>
     );
 }
