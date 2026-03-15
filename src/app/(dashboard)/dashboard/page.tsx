@@ -66,6 +66,8 @@ export default function MainDashboard() {
     const { userProfile } = useAuth();
 
     const [stats, setStats] = useState({
+        pendingPR: 0,
+        pendingPC: 0,
         pendingPO: 0,
         approvedPOTotal: 0,
         pendingWC: 0,
@@ -80,6 +82,36 @@ export default function MainDashboard() {
 
     useEffect(() => {
         if (!currentProject) return;
+
+        const prQuery = query(
+            collection(db, "purchase_requisitions"),
+            where("projectId", "==", currentProject.id)
+        );
+        const unSubPR = onSnapshot(prQuery, (snapshot) => {
+            let pendingCount = 0;
+
+            snapshot.forEach((doc) => {
+                const pr = doc.data();
+                if (pr.status === "pending_need_approval") pendingCount++;
+            });
+
+            setStats(prev => ({ ...prev, pendingPR: pendingCount }));
+        });
+
+        const pcQuery = query(
+            collection(db, "pr_price_comparisons"),
+            where("projectId", "==", currentProject.id)
+        );
+        const unSubPC = onSnapshot(pcQuery, (snapshot) => {
+            let pendingCount = 0;
+
+            snapshot.forEach((doc) => {
+                const pc = doc.data();
+                if (pc.status === "pending_approval") pendingCount++;
+            });
+
+            setStats(prev => ({ ...prev, pendingPC: pendingCount }));
+        });
 
         // Fetch POs
         const poQuery = query(
@@ -167,6 +199,8 @@ export default function MainDashboard() {
         });
 
         return () => {
+            unSubPR();
+            unSubPC();
             unSubPO();
             unSubWC();
             unSubVO();
@@ -183,7 +217,7 @@ export default function MainDashboard() {
     // Percentages
     const usedPercentage = netBudget > 0 ? (totalUsed / netBudget) * 100 : 0;
     const isOverBudget = usedPercentage > 100;
-    const pendingApprovals = stats.pendingPO + stats.pendingWC + stats.pendingVO;
+    const pendingApprovals = stats.pendingPR + stats.pendingPC + stats.pendingPO + stats.pendingWC + stats.pendingVO;
 
     return (
         <div className="space-y-6 rounded-3xl bg-gradient-to-br from-slate-50 via-white to-blue-50/40 p-1.5">
@@ -274,7 +308,23 @@ export default function MainDashboard() {
             )}
 
             {/* Quick Stats Grid */}
-            <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-6">
+                <div className="rounded-xl border border-indigo-200 bg-gradient-to-b from-white to-indigo-50/40 p-5 shadow-sm">
+                    <div className="mb-4 inline-flex rounded-lg border border-indigo-200 bg-indigo-50 p-2 text-indigo-700">
+                        <FileText size={18} />
+                    </div>
+                    <p className="text-sm text-slate-500">PR รออนุมัติ</p>
+                    <p className="mt-1 text-2xl font-semibold text-slate-900">{stats.pendingPR}</p>
+                </div>
+
+                <div className="rounded-xl border border-sky-200 bg-gradient-to-b from-white to-sky-50/40 p-5 shadow-sm">
+                    <div className="mb-4 inline-flex rounded-lg border border-sky-200 bg-sky-50 p-2 text-sky-700">
+                        <FileText size={18} />
+                    </div>
+                    <p className="text-sm text-slate-500">PC รออนุมัติ</p>
+                    <p className="mt-1 text-2xl font-semibold text-slate-900">{stats.pendingPC}</p>
+                </div>
+
                 <div className="rounded-xl border border-blue-200 bg-gradient-to-b from-white to-blue-50/40 p-5 shadow-sm">
                     <div className="mb-4 inline-flex rounded-lg border border-blue-200 bg-blue-50 p-2 text-blue-700">
                         <FileText size={18} />
@@ -390,6 +440,14 @@ export default function MainDashboard() {
                             <h3 className="text-base font-semibold text-slate-900">เมนูด่วน</h3>
                         </div>
                         <div className="space-y-3 p-4">
+                            <Link href="/pr/create" className="flex items-center gap-3 rounded-lg border border-indigo-200 bg-indigo-50/40 px-4 py-3 text-sm font-medium text-indigo-900 transition-colors hover:bg-indigo-50">
+                                <FileText size={16} className="text-indigo-600" />
+                                สร้างใบขอซื้อ/ขอจ้าง (PR)
+                            </Link>
+                            <Link href="/price-comparisons" className="flex items-center gap-3 rounded-lg border border-sky-200 bg-sky-50/40 px-4 py-3 text-sm font-medium text-sky-900 transition-colors hover:bg-sky-50">
+                                <FileText size={16} className="text-sky-600" />
+                                เอกสารเทียบราคา (PC)
+                            </Link>
                             <Link href="/po/create" className="flex items-center gap-3 rounded-lg border border-blue-200 bg-blue-50/40 px-4 py-3 text-sm font-medium text-blue-900 transition-colors hover:bg-blue-50">
                                 <FileText size={16} className="text-blue-600" />
                                 สร้างใบสั่งซื้อ (PO)

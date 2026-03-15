@@ -1,117 +1,26 @@
 "use client";
 
+import { useEffect, useMemo, useState } from "react";
+import Link from "next/link";
+import liff from "@line/liff";
+import { collection, onSnapshot, query, where } from "firebase/firestore";
+import { ClipboardList, FileText, Info, Loader2, Plus } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 import { useProject } from "@/context/ProjectContext";
 import { db } from "@/lib/firebase";
-import { FileText, Phone, MapPin, Search, ChevronRight, Loader2, Info, Store, ChevronDown, Pencil, CheckCircle } from "lucide-react";
-import { collection, query, where, orderBy, onSnapshot, doc, getDoc, limit, updateDoc, serverTimestamp } from "firebase/firestore";
-import Link from "next/link";
-import { useEffect, useState } from "react";
-import { PurchaseOrder } from "@/types/po";
-import { Vendor } from "@/types/vendor";
-import liff from "@line/liff";
-
-interface POWithVendor extends PurchaseOrder {
-    vendorPhone?: string;
-    vendorSecondaryPhone?: string;
-    vendorMap?: string;
-    vendorAddress?: string;
-}
-
-type FirestoreTimestampLike = {
-    toDate?: () => Date;
-    seconds?: number;
-};
-
-const formatShortDateThai = (value: unknown) => {
-    if (value && typeof value === "object") {
-        const ts = value as FirestoreTimestampLike;
-        if (typeof ts.toDate === "function") {
-            return ts.toDate().toLocaleDateString("th-TH", {
-                day: "2-digit",
-                month: "2-digit",
-                year: "2-digit",
-            });
-        }
-        if (typeof ts.seconds === "number") {
-            return new Date(ts.seconds * 1000).toLocaleDateString("th-TH", {
-                day: "2-digit",
-                month: "2-digit",
-                year: "2-digit",
-            });
-        }
-    }
-
-    return "-";
-};
+import type { PurchaseRequisition } from "@/types/pr";
+import { formatDateThai, formatMoney, getTimestampMillis } from "@/app/liff/_lib/documentHelpers";
+import { getRequesterStatusMeta } from "@/app/liff/_lib/requesterPortal";
 
 export default function LiffDashboard() {
     const { user, userProfile } = useAuth();
     const { currentProject, projects, setCurrentProject } = useProject();
 
-    const [activeTab, setActiveTab] = useState<"PO" | "Vendors">("PO");
-    const [pos, setPos] = useState<POWithVendor[]>([]);
-    const [poSearch, setPoSearch] = useState("");
-    const [statusFilter, setStatusFilter] = useState<string>("all");
-    const [vendors, setVendors] = useState<Vendor[]>([]);
-    const [vendorSearch, setVendorSearch] = useState("");
-    const [vendorLimit, setVendorLimit] = useState(20);
-    const [loading, setLoading] = useState(true);
-    const [poLimit, setPoLimit] = useState(20);
     const [liffInitialized, setLiffInitialized] = useState(false);
+    const [loading, setLoading] = useState(true);
+    const [requisitions, setRequisitions] = useState<PurchaseRequisition[]>([]);
 
-    const filteredPOs = pos.filter(po => {
-        const matchesSearch = po.poNumber.toLowerCase().includes(poSearch.toLowerCase()) ||
-            po.vendorName?.toLowerCase().includes(poSearch.toLowerCase());
-
-        let matchesStatus = false;
-        if (statusFilter === "completed") {
-            matchesStatus = po.isCompleted === true;
-        } else {
-            if (po.isCompleted) {
-                matchesStatus = false;
-            } else if (statusFilter === "all") {
-                matchesStatus = true;
-            } else {
-                matchesStatus = po.status === statusFilter;
-            }
-        }
-
-        return matchesSearch && matchesStatus;
-    });
-
-    const filteredVendors = vendors.filter(v =>
-        v.name.toLowerCase().includes(vendorSearch.toLowerCase()) ||
-        (v.taxId && v.taxId.includes(vendorSearch)) ||
-        (v.contactName && v.contactName.toLowerCase().includes(vendorSearch.toLowerCase())) ||
-        (v.phone && v.phone.includes(vendorSearch)) ||
-        (v.secondaryPhone && v.secondaryPhone.includes(vendorSearch)) ||
-        (v.vendorTypes && v.vendorTypes.some(t => t.toLowerCase().includes(vendorSearch.toLowerCase())))
-    );
-    const visibleVendors = filteredVendors.slice(0, vendorLimit);
-
-    // defaults to true unless explicitly false in .env
     const isDevMode = process.env.NEXT_PUBLIC_SHOW_DEV_MODE !== "false";
-    const canApprove = userProfile?.role === "admin" || userProfile?.role === "pm";
-
-    const [actionLoadingId, setActionLoadingId] = useState<string | null>(null);
-
-    const handleMarkCompleted = async (poId: string) => {
-        if (!userProfile) return;
-        setActionLoadingId(poId);
-        try {
-            const poRef = doc(db, "purchase_orders", poId);
-            await updateDoc(poRef, {
-                isCompleted: true,
-                updatedAt: serverTimestamp(),
-            });
-        } catch (error) {
-            console.error("Error marking PO completed:", error);
-            alert("ไม่สามารถจัดเก็บเอกสารได้");
-        } finally {
-            setActionLoadingId(null);
-        }
-    };
 
     useEffect(() => {
         const initLiff = async () => {
@@ -129,125 +38,99 @@ export default function LiffDashboard() {
                     return;
                 }
 
-                // Get LINE Profile and login to Firebase
                 const profile = await liff.getProfile();
-
-                // Even if we already have Firebase user, it's safer to ensure the correct user is signed in
-                const res = await fetch("/api/auth/line-login", {
+                const response = await fetch("/api/auth/line-login", {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ lineUserId: profile.userId })
+                    body: JSON.stringify({ lineUserId: profile.userId }),
                 });
 
-                if (res.ok) {
-                    const data = await res.json();
+                if (response.ok) {
+                    const data = await response.json();
                     if (data.customToken && data.success) {
                         const { signInWithCustomToken } = await import("firebase/auth");
                         const { auth } = await import("@/lib/firebase");
                         await signInWithCustomToken(auth, data.customToken);
                     }
-                } else {
-                    console.log("LINE userId is not registered to any user.");
                 }
 
                 setLiffInitialized(true);
-            } catch (err) {
-                console.error("LIFF Init Error:", err);
-                setLiffInitialized(true); // fall-through to avoid entirely blocking
+            } catch (error) {
+                console.error("LIFF init error:", error);
+                setLiffInitialized(true);
             }
         };
 
         if (typeof window !== "undefined") {
-            initLiff();
+            void initLiff();
         }
     }, [isDevMode]);
 
     useEffect(() => {
         if (!user || !currentProject) {
             setLoading(false);
+            setRequisitions([]);
             return;
         }
 
         setLoading(true);
 
-        // Fetch POs (with limit for performance)
-        const poQ = query(
-            collection(db, "purchase_orders"),
-            where("projectId", "==", currentProject.id),
-            where("createdBy", "==", user.uid),
-            orderBy("createdAt", "desc"),
-            limit(poLimit)
-        );
-        const unsubPO = onSnapshot(poQ, async (snapshot) => {
-            const poData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as PurchaseOrder));
+        const unsubscribe = onSnapshot(
+            query(
+                collection(db, "purchase_requisitions"),
+                where("projectId", "==", currentProject.id),
+                where("createdBy", "==", user.uid)
+            ),
+            (snapshot) => {
+                const nextRequisitions = snapshot.docs
+                    .map((docSnap) => ({ id: docSnap.id, ...docSnap.data() }) as PurchaseRequisition)
+                    .sort((left, right) => getTimestampMillis(right.createdAt) - getTimestampMillis(left.createdAt));
 
-            // Fetch Vendor Info for each PO
-            const poWithVendors: POWithVendor[] = [];
-            for (const po of poData) {
-                let vendorInfo = {};
-                if (po.vendorId) {
-                    try {
-                        const vendorDoc = await getDoc(doc(db, "vendors", po.vendorId));
-                        if (vendorDoc.exists()) {
-                            const vData = vendorDoc.data();
-                            vendorInfo = {
-                                vendorPhone: vData.phone,
-                                vendorSecondaryPhone: vData.secondaryPhone,
-                                vendorMap: vData.googleMapUrl,
-                                vendorAddress: vData.address
-                            };
-                        }
-                    } catch (e) {
-                        console.log("Error fetching vendor", e);
-                    }
-                }
-                poWithVendors.push({ ...po, ...vendorInfo });
+                setRequisitions(nextRequisitions);
+                setLoading(false);
             }
+        );
 
-            setPos(poWithVendors);
-            setLoading(false);
-        });
+        return () => unsubscribe();
+    }, [currentProject, user]);
 
-        // Fetch Global Vendors (Active)
-        const vendorQ = query(collection(db, "vendors"), where("isActive", "==", true));
-        const unsubVendor = onSnapshot(vendorQ, (snapshot) => {
-            setVendors(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Vendor)));
-        });
-
-        return () => {
-            unsubPO();
-            unsubVendor();
+    const summary = useMemo(() => {
+        return {
+            total: requisitions.length,
+            pending: requisitions.filter((item) => item.status === "pending_need_approval").length,
+            processing: requisitions.filter((item) =>
+                item.status === "approved_for_sourcing" ||
+                item.status === "sourcing" ||
+                item.status === "comparing" ||
+                item.status === "selection_pending" ||
+                item.status === "selected"
+            ).length,
         };
-    }, [user, currentProject]);
-
-    useEffect(() => {
-        // Reset paging whenever switching to vendor tab or changing search keyword
-        setVendorLimit(20);
-    }, [activeTab, vendorSearch]);
+    }, [requisitions]);
 
     if (!liffInitialized) {
         return (
-            <div className="flex flex-col items-center justify-center p-8 h-screen bg-slate-50 text-center">
-                <Loader2 className="w-10 h-10 text-blue-600 animate-spin mb-4" />
-                <p className="text-slate-500 font-medium tracking-wide">กำลังเชื่อมต่อ LINE...</p>
+            <div className="flex h-screen flex-col items-center justify-center bg-slate-50 p-8 text-center">
+                <Loader2 className="mb-4 h-10 w-10 animate-spin text-blue-600" />
+                <p className="text-sm font-medium text-slate-500">กำลังเชื่อมต่อ LINE...</p>
             </div>
         );
     }
 
     if (!user) {
         return (
-            <div className="flex flex-col items-center justify-center p-8 h-screen bg-slate-50 text-center">
-                <div className="w-16 h-16 bg-blue-100 rounded-full flex items-center justify-center mb-4">
-                    <Info className="w-8 h-8 text-blue-500" />
+            <div className="flex h-screen flex-col items-center justify-center bg-slate-50 p-8 text-center">
+                <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-blue-100">
+                    <Info className="h-8 w-8 text-blue-500" />
                 </div>
-                <h2 className="text-xl font-bold mb-2 text-slate-800">กรุณาเข้าสู่ระบบ</h2>
-                <p className="text-slate-500 mb-6">คุณต้องลงชื่อเข้าใช้ก่อนถึงจะดูข้อมูลสำหรับมือถือได้</p>
-                <div className="flex flex-col gap-3 w-full max-w-xs">
-                    <Link href="/login" className="bg-blue-700 text-white px-6 py-3 rounded-lg font-semibold w-full text-center">
-                        ไปที่หน้า Login
+                <h2 className="text-xl font-bold text-slate-800">กรุณาเข้าสู่ระบบ</h2>
+                <p className="mt-2 max-w-sm text-sm text-slate-500">กรุณาเข้าสู่ระบบก่อนใช้งานระบบส่งคำขอ PR</p>
+                <div className="mt-6 flex w-full max-w-xs flex-col gap-3">
+                    <Link href="/login" className="rounded-lg bg-blue-700 px-6 py-3 text-center text-sm font-semibold text-white">
+                        ไปหน้าเข้าสู่ระบบ
                     </Link>
-                    <Link href="/liff/binding" className="bg-white text-blue-700 border border-blue-300 px-6 py-3 rounded-lg font-semibold w-full text-center">
-                        ลงทะเบียนผ่านเบอร์ติดต่อ
+                    <Link href="/liff/binding" className="rounded-lg border border-blue-300 bg-white px-6 py-3 text-center text-sm font-semibold text-blue-700">
+                        ผูกบัญชี LINE
                     </Link>
                 </div>
             </div>
@@ -256,321 +139,150 @@ export default function LiffDashboard() {
 
     if (!currentProject) {
         return (
-            <div className="flex flex-col items-center justify-center p-8 h-[80vh] text-center">
-                <div className="w-16 h-16 bg-blue-100 rounded-full flex items-center justify-center mb-4">
-                    <FileText className="w-8 h-8 text-blue-600" />
+            <div className="flex min-h-screen flex-col items-center justify-center bg-slate-50 p-8 text-center">
+                <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-blue-100">
+                    <FileText className="h-8 w-8 text-blue-600" />
                 </div>
-                <h3 className="text-lg font-bold text-slate-800 mb-2">ยังไม่ได้ดึงข้อมูลโครงการ</h3>
-                <p className="text-slate-500 mb-6 text-sm">เนื่องจากเปิดผ่านมือถือ กรุณารอสักครู่ให้ตัวระบบโหลดโครงการของคุณ</p>
-                {loading && <Loader2 className="animate-spin text-blue-500" size={32} />}
+                <h2 className="text-lg font-semibold text-slate-900">กรุณาเลือกโครงการก่อน</h2>
+                <p className="mt-2 text-sm text-slate-500">เปิด LIFF อีกครั้งหลังจากโหลดรายการโครงการเรียบร้อยแล้ว</p>
             </div>
         );
     }
 
-    const POStatusBadge = ({ status, isCompleted }: { status: string, isCompleted?: boolean }) => {
-        if (isCompleted) {
-            return <span className="px-2 py-0.5 text-xs font-semibold rounded-full bg-purple-100 text-purple-700">สำเร็จแล้ว (เก็บ)</span>;
-        }
-        switch (status) {
-            case 'approved': return <span className="px-2 py-0.5 text-xs font-semibold rounded-full bg-green-100 text-green-700">อนุมัติแล้ว</span>;
-            case 'rejected': return <span className="px-2 py-0.5 text-xs font-semibold rounded-full bg-red-100 text-red-700">ไม่อนุมัติ</span>;
-            case 'pending': return <span className="px-2 py-0.5 text-xs font-semibold rounded-full bg-blue-100 text-blue-700">รออนุมัติ</span>;
-            default: return <span className="px-2 py-0.5 text-xs font-semibold rounded-full bg-slate-100 text-slate-700">ฉบับร่าง</span>;
-        }
-    };
-
     return (
         <div className="min-h-screen bg-slate-100 pb-20">
-            <div className="sticky top-0 z-40 border-b border-slate-200 bg-blue-100 p-4">
-                <div className="flex justify-between items-center mb-4">
-                    <div className="flex-1 max-w-[80%] pr-4">
-                        <div className="flex items-center space-x-2">
-                            <h1 className="text-xl font-bold text-slate-900">โครงการปัจจุบัน</h1>
-                            {isDevMode && (
-                                <span className="bg-blue-50 text-blue-700 text-[10px] px-2 py-0.5 rounded-full border border-blue-200">DEV MODE</span>
-                            )}
-                        </div>
-                        <div className="relative mt-1">
-                            <select
-                                className="w-full bg-white text-slate-800 border border-slate-300 rounded-lg py-1.5 pl-3 pr-8 text-sm outline-none focus:ring-2 focus:ring-blue-200 appearance-none font-semibold truncate"
-                                value={currentProject.id}
-                                onChange={(e) => {
-                                    const selected = projects.find(p => p.id === e.target.value);
-                                    if (selected) {
-                                        setCurrentProject(selected);
-                                    }
-                                }}
-                            >
-                                {projects.map(p => (
-                                    <option key={p.id} value={p.id}>
-                                        {p.name}
-                                    </option>
-                                ))}
-                            </select>
-                            <ChevronDown size={16} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none" />
-                        </div>
-                    </div>
-                    <div className="flex flex-col items-center shrink-0 ml-2">
-                        <div className="w-11 h-11 bg-slate-100 rounded-full flex items-center justify-center border border-slate-300 font-bold overflow-hidden text-slate-700">
-                            {userProfile?.lineProfilePic ? (
-                                <img src={userProfile.lineProfilePic} alt="Profile" className="w-full h-full object-cover" />
-                            ) : (
-                                user?.email?.charAt(0).toUpperCase()
-                            )}
-                        </div>
-                    </div>
-                </div>
-
-                <div className="flex gap-3 mb-3">
-                    <Link href="/liff/po/create" className="flex-1 flex justify-center items-center py-2.5 px-1 bg-blue-700 hover:bg-blue-600 rounded-lg text-[11px] sm:text-xs font-bold text-white transition-colors border border-blue-700">
-                        <span className="bg-white text-blue-700 w-4 h-4 rounded-full flex items-center justify-center mr-1.5 text-sm leading-none pb-0.5">+</span>
-                        สร้าง PO
-                    </Link>
-                    <Link href="/liff/vendors/create" className="flex-1 flex justify-center items-center py-2.5 px-1 bg-white hover:bg-slate-50 rounded-lg text-[11px] sm:text-xs font-bold text-slate-700 transition-colors border border-slate-300">
-                        <span className="bg-blue-700 text-white w-4 h-4 rounded-full flex items-center justify-center mr-1.5 text-sm leading-none pb-0.5">+</span>
-                        เพิ่มคู่ค้า
-                    </Link>
-                </div>
-
-                <div className="flex bg-slate-100 p-1 rounded-lg border border-slate-200">
-                    <button
-                        onClick={() => setActiveTab("PO")}
-                        className={`flex-1 flex justify-center items-center py-2.5 text-[11px] sm:text-xs font-bold rounded-md transition-colors ${activeTab === 'PO' ? 'bg-white text-blue-700 border border-slate-200' : 'text-slate-600'}`}
-                    >
-                        <FileText size={15} className="mr-1.5" />
-                        ใบสั่งซื้อ
-                    </button>
-                    <button
-                        onClick={() => setActiveTab("Vendors")}
-                        className={`flex-1 flex justify-center items-center py-2.5 text-[11px] sm:text-xs font-bold rounded-md transition-colors ${activeTab === 'Vendors' ? 'bg-white text-blue-700 border border-slate-200' : 'text-slate-600'}`}
-                    >
-                        <Store size={15} className="mr-1.5" />
-                        คู่ค้า
-                    </button>
-                </div>
-            </div>
-
-            <main className="p-4 space-y-4">
-                {/* Search & Filters for PO */}
-                {!loading && activeTab === 'PO' && (
-                    <div className="space-y-3">
-                        <div className="relative">
-                            <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
-                            <input
-                                type="text"
-                                placeholder="ค้นหาเลขที่ PO หรือชื่อร้านค้า..."
-                                value={poSearch}
-                                onChange={(e) => setPoSearch(e.target.value)}
-                                className="w-full pl-10 pr-4 py-3 text-sm bg-white border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-200 focus:border-blue-500 outline-none transition-colors font-medium"
-                            />
-                        </div>
-
-                        <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-hide no-scrollbar -mx-1 px-1">
-                            {['all', 'pending', 'approved', 'completed', 'rejected', 'draft'].map((status) => (
-                                <button
-                                    key={status}
-                                    onClick={() => setStatusFilter(status)}
-                                    className={`px-4 py-1.5 rounded-full text-[11px] font-bold whitespace-nowrap transition-all border ${statusFilter === status
-                                        ? 'bg-blue-700 border-blue-700 text-white'
-                                        : 'bg-white border-slate-100 text-slate-500 hover:bg-slate-50'
-                                        }`}
-                                >
-                                    {status === 'all' ? 'ทั้งหมด' :
-                                        status === 'pending' ? 'รออนุมัติ' :
-                                            status === 'approved' ? 'อนุมัติแล้ว' :
-                                                status === 'completed' ? 'สำเร็จแล้ว (เก็บ)' :
-                                                    status === 'rejected' ? 'ไม่อนุมัติ' : 'ฉบับร่าง'}
-                                </button>
-                            ))}
-                        </div>
-                    </div>
-                )}
-                {loading && (
-                    <div className="flex justify-center py-10">
-                        <Loader2 className="animate-spin text-blue-500 w-8 h-8" />
-                    </div>
-                )}
-
-                {/* PO Content */}
-                {!loading && activeTab === 'PO' && filteredPOs.map(po => (
-                    <div key={po.id} className="bg-white p-4 rounded-lg border border-slate-200 transition-colors">
-                        <div className="flex justify-between items-start mb-2">
-                            <div className="flex flex-col">
-                                <span className="font-black text-slate-800 text-lg tracking-tight">{po.poNumber}</span>
-                                {po.poType === 'extra' && (
-                                    <span className="text-[9px] bg-amber-50 text-amber-600 px-2 py-0.5 rounded-lg font-black w-fit mt-1 border border-amber-100 uppercase tracking-tighter">
-                                        PO เพิ่มเติม
+            <header className="sticky top-0 z-40 border-b border-slate-200 bg-white">
+                <div className="mx-auto w-full max-w-3xl px-4 py-4">
+                    <div className="flex items-start justify-between gap-4">
+                        <div className="min-w-0 flex-1">
+                            <div className="flex items-center gap-2">
+                                <h1 className="text-xl font-bold text-slate-900">ระบบส่งคำขอ PR</h1>
+                                {isDevMode && (
+                                    <span className="rounded-full border border-blue-200 bg-blue-50 px-2 py-0.5 text-[10px] font-semibold text-blue-700">
+                                        DEV
                                     </span>
                                 )}
                             </div>
-                            <POStatusBadge status={po.status} isCompleted={po.isCompleted} />
+                            <p className="mt-1 text-sm text-slate-500">สร้าง PR และติดตามเฉพาะคำขอของคุณ</p>
                         </div>
-                        <p className="text-sm font-bold text-slate-700 mb-1 line-clamp-1">{po.vendorName}</p>
-                        <div className="flex justify-between items-end">
-                            <p className="text-xs font-medium text-slate-400">ยอดรวม: <span className="text-slate-600 font-bold">฿{po.totalAmount?.toLocaleString()}</span></p>
-                            <span className="text-[10px] text-slate-300 font-medium">{formatShortDateThai(po.createdAt)}</span>
-                        </div>
-
-                        <div className="grid grid-cols-2 gap-2 mt-4">
-                            <a
-                                href={po.vendorPhone ? `tel:${po.vendorPhone}` : '#'}
-                                className={`flex justify-center items-center py-2.5 px-3 rounded-lg text-xs font-bold transition-colors ${po.vendorPhone ? 'bg-blue-50 text-blue-700 border border-blue-200 active:bg-blue-100' : 'bg-slate-50 text-slate-300 border border-slate-200 cursor-not-allowed'}`}
-                                onClick={(e) => !po.vendorPhone && e.preventDefault()}
-                            >
-                                <Phone size={14} className="mr-1.5" /> โทรหลัก
-                            </a>
-                            {po.vendorSecondaryPhone && (
-                                <a
-                                    href={`tel:${po.vendorSecondaryPhone}`}
-                                    className="flex justify-center items-center py-2.5 px-3 rounded-lg text-xs font-bold transition-colors bg-emerald-50 text-emerald-700 border border-emerald-200 active:bg-emerald-100"
-                                >
-                                    <Phone size={14} className="mr-1.5" /> โทรสำรอง
-                                </a>
+                        <div className="flex h-11 w-11 items-center justify-center overflow-hidden rounded-full border border-slate-300 bg-slate-100 font-bold text-slate-700">
+                            {userProfile?.lineProfilePic ? (
+                                // eslint-disable-next-line @next/next/no-img-element
+                                <img src={userProfile.lineProfilePic} alt="โปรไฟล์" className="h-full w-full object-cover" />
+                            ) : (
+                                user.email?.charAt(0).toUpperCase()
                             )}
-                            <a
-                                href={po.vendorMap || '#'}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className={`flex justify-center items-center py-2.5 px-3 rounded-lg text-xs font-bold transition-colors ${po.vendorMap ? 'bg-blue-50 text-blue-700 border border-blue-200 active:bg-blue-100' : 'bg-slate-50 text-slate-300 border border-slate-200 cursor-not-allowed'}`}
-                                onClick={(e) => !po.vendorMap && e.preventDefault()}
-                            >
-                                <MapPin size={14} className="mr-1.5" /> แผนที่
-                            </a>
-                            {po.status === "approved" && !po.isCompleted && canApprove && (
-                                <button
-                                    onClick={() => handleMarkCompleted(po.id)}
-                                    disabled={actionLoadingId === po.id}
-                                    className="col-span-2 flex justify-center items-center py-2.5 px-3 rounded-lg text-xs font-bold transition-colors bg-purple-50 text-purple-700 border border-purple-200 active:bg-purple-100 disabled:opacity-50"
-                                >
-                                    {actionLoadingId === po.id ? <Loader2 size={14} className="mr-1.5 animate-spin" /> : <CheckCircle size={14} className="mr-1.5" />}
-                                    จัดเก็บ
-                                </button>
-                            )}
-                            <Link
-                                href={`/liff/po/${po.id}`}
-                                className="flex justify-center items-center py-2.5 px-3 rounded-lg bg-slate-900 text-white active:bg-slate-800 transition-colors font-bold text-xs"
-                            >
-                                <ChevronRight size={16} className="mr-1.5" /> รายละเอียด
-                            </Link>
                         </div>
                     </div>
-                ))}
 
-                {!loading && activeTab === 'PO' && filteredPOs.length > 0 && pos.length >= poLimit && (
-                    <div className="text-center py-4">
-                        <button
-                            onClick={() => setPoLimit(prev => prev + 20)}
-                            className="bg-white border border-slate-300 px-6 py-2.5 rounded-lg text-xs font-bold text-slate-700 active:bg-slate-50"
+                    <div className="relative mt-3">
+                        <select
+                            className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-800 outline-none focus:ring-2 focus:ring-blue-200"
+                            value={currentProject.id}
+                            onChange={(event) => {
+                                const selected = projects.find((project) => project.id === event.target.value);
+                                if (selected) {
+                                    setCurrentProject(selected);
+                                }
+                            }}
                         >
-                            โหลดเพิ่มเติม...
-                        </button>
+                            {projects.map((project) => (
+                                <option key={project.id} value={project.id}>
+                                    {project.name}
+                                </option>
+                            ))}
+                        </select>
                     </div>
-                )}
+                </div>
+            </header>
 
-                {!loading && activeTab === 'PO' && pos.length === 0 && (
-                    <div className="text-center text-slate-400 py-16 flex flex-col items-center">
-                        <FileText size={48} className="text-slate-200 mb-3" />
-                        <p className="font-bold text-sm">ไม่มีใบสั่งซื้อในโครงการนี้</p>
+            <main className="mx-auto w-full max-w-3xl space-y-4 px-4 py-4">
+                <section className="grid grid-cols-2 gap-3">
+                    <Link
+                        href="/liff/pr/create"
+                        className="flex items-center justify-center rounded-2xl bg-blue-700 px-4 py-4 text-sm font-semibold text-white shadow-sm"
+                    >
+                        <Plus size={16} className="mr-2" />
+                        สร้าง PR
+                    </Link>
+                    <Link
+                        href="/liff/pr"
+                        className="flex items-center justify-center rounded-2xl border border-slate-300 bg-white px-4 py-4 text-sm font-semibold text-slate-800 shadow-sm"
+                    >
+                        <ClipboardList size={16} className="mr-2" />
+                        PR ของฉัน
+                    </Link>
+                </section>
+
+                <section className="grid grid-cols-3 gap-3">
+                    <div className="rounded-2xl border border-slate-200 bg-white p-4 text-center shadow-sm">
+                        <p className="text-[11px] font-semibold tracking-wide text-slate-400">ทั้งหมด</p>
+                        <p className="mt-2 text-2xl font-bold text-slate-900">{summary.total}</p>
                     </div>
-                )}
-
-                {!loading && activeTab === 'PO' && pos.length > 0 && filteredPOs.length === 0 && (
-                    <div className="text-center text-slate-400 py-16">
-                        <p className="text-sm font-medium">ไม่พบข้อมูลที่ค้นหา</p>
+                    <div className="rounded-2xl border border-slate-200 bg-white p-4 text-center shadow-sm">
+                        <p className="text-[11px] font-semibold tracking-wide text-slate-400">รออนุมัติ</p>
+                        <p className="mt-2 text-2xl font-bold text-amber-700">{summary.pending}</p>
                     </div>
-                )}
+                    <div className="rounded-2xl border border-slate-200 bg-white p-4 text-center shadow-sm">
+                        <p className="text-[11px] font-semibold tracking-wide text-slate-400">กำลังดำเนินการ</p>
+                        <p className="mt-2 text-2xl font-bold text-sky-700">{summary.processing}</p>
+                    </div>
+                </section>
 
-
-
-                {/* Vendors Content */}
-                {!loading && activeTab === 'Vendors' && (
-                    <div className="mb-4">
-                        <div className="relative">
-                            <Search className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
-                            <input
-                                type="text"
-                                placeholder="ค้นหาร้านค้า, ประเภท หรือบุคคลติดต่อ..."
-                                value={vendorSearch}
-                                onChange={(e) => setVendorSearch(e.target.value)}
-                                className="w-full pl-9 pr-3 py-2 text-sm border border-slate-300 bg-white focus:ring-blue-500 focus:border-blue-500 rounded-lg"
-                            />
+                <section className="rounded-2xl border border-slate-200 bg-white shadow-sm">
+                    <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3">
+                        <div>
+                            <h2 className="text-sm font-semibold text-slate-900">คำขอล่าสุด</h2>
+                            <p className="text-xs text-slate-500">PR ล่าสุดที่คุณสร้างในโครงการนี้</p>
                         </div>
+                        <Link href="/liff/pr" className="text-xs font-semibold text-blue-700">
+                            ดูทั้งหมด
+                        </Link>
                     </div>
-                )}
 
-                {!loading && activeTab === 'Vendors' && visibleVendors.map(v => (
-                    <div key={v.id} className="bg-white p-4 rounded-lg border border-slate-200">
-                        <div className="flex justify-between items-start mb-1">
-                            <span className="font-bold text-slate-800 text-lg line-clamp-1">{v.name}</span>
+                    {loading ? (
+                        <div className="p-8 text-center">
+                            <Loader2 className="mx-auto mb-4 h-8 w-8 animate-spin text-blue-600" />
+                            <p className="text-sm text-slate-500">กำลังโหลดรายการ PR ของคุณ...</p>
                         </div>
-                        {v.vendorTypes && v.vendorTypes.length > 0 && (
-                            <div className="flex flex-wrap gap-1 mt-1 mb-2.5">
-                                {v.vendorTypes.map(tag => (
-                                    <span key={tag} className="bg-blue-50 text-blue-700 border border-blue-200 px-2 py-0.5 rounded-full text-[10px] font-bold">
-                                        {tag}
-                                    </span>
-                                ))}
-                            </div>
-                        )}
-                        <p className="text-sm font-medium text-slate-700 mb-1">ติดต่อ: {v.contactName}</p>
-                        <div className="space-y-1 text-xs text-slate-500">
-                            <p>หลัก: {v.phone || "ไม่มีเบอร์"}</p>
-                            {v.secondaryPhone && <p>สำรอง: {v.secondaryPhone}</p>}
+                    ) : requisitions.length === 0 ? (
+                        <div className="p-8 text-center">
+                            <FileText className="mx-auto mb-4 h-12 w-12 text-slate-300" />
+                            <h3 className="text-base font-semibold text-slate-900">ยังไม่มี PR</h3>
+                            <p className="mt-2 text-sm text-slate-500">เริ่มต้นสร้างคำขอแรกของคุณได้เลย</p>
                         </div>
+                    ) : (
+                        <div className="divide-y divide-slate-100">
+                            {requisitions.slice(0, 5).map((requisition) => {
+                                const statusMeta = getRequesterStatusMeta(requisition.status);
 
-                        <div className="grid grid-cols-2 gap-2 mt-4">
-                            <a
-                                href={v.phone ? `tel:${v.phone}` : '#'}
-                                className={`flex justify-center items-center py-2 px-3 rounded-lg text-sm font-semibold transition-colors ${v.phone ? 'bg-blue-50 text-blue-700 border border-blue-200 hover:bg-blue-100' : 'bg-slate-50 text-slate-400 border border-slate-200 cursor-not-allowed'}`}
-                                onClick={(e) => !v.phone && e.preventDefault()}
-                            >
-                                <Phone size={14} className="mr-1.5" /> โทรหลัก
-                            </a>
-                            {v.secondaryPhone && (
-                                <a
-                                    href={`tel:${v.secondaryPhone}`}
-                                    className="flex justify-center items-center py-2 px-3 rounded-lg text-sm font-semibold transition-colors bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100"
-                                >
-                                    <Phone size={14} className="mr-1.5" /> โทรสำรอง
-                                </a>
-                            )}
-                            <a
-                                href={v.googleMapUrl || '#'}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className={`flex justify-center items-center py-2 px-3 rounded-lg text-sm font-semibold transition-colors ${v.googleMapUrl ? 'bg-blue-50 text-blue-700 border border-blue-200 hover:bg-blue-100' : 'bg-slate-50 text-slate-400 border border-slate-200 cursor-not-allowed'}`}
-                                onClick={(e) => !v.googleMapUrl && e.preventDefault()}
-                            >
-                                <MapPin size={14} className="mr-1.5" /> แผนที่ร้าน
-                            </a>
-                            <Link
-                                href={`/liff/vendors/${v.id}`}
-                                className="inline-flex items-center justify-center px-3 rounded-lg border border-slate-300 bg-white text-slate-700 hover:bg-slate-50"
-                                title="แก้ไขข้อมูลคู่ค้า"
-                            >
-                                <Pencil size={14} />
-                            </Link>
+                                return (
+                                    <Link
+                                        key={requisition.id}
+                                        href={`/liff/pr/${requisition.id}`}
+                                        className="block px-4 py-4 transition-colors hover:bg-slate-50"
+                                    >
+                                        <div className="flex items-start justify-between gap-3">
+                                            <div className="min-w-0">
+                                                <p className="text-sm font-semibold text-slate-900">{requisition.prNumber}</p>
+                                                <h3 className="mt-1 line-clamp-2 text-sm font-medium text-slate-800">{requisition.title}</h3>
+                                                <p className="mt-2 text-xs text-slate-500">{statusMeta.description}</p>
+                                            </div>
+                                            <span className={`shrink-0 rounded-full px-2.5 py-1 text-[11px] font-semibold ${statusMeta.color}`}>
+                                                {statusMeta.label}
+                                            </span>
+                                        </div>
+
+                                        <div className="mt-3 flex items-center justify-between text-xs text-slate-500">
+                                            <span>{formatDateThai(requisition.createdAt)}</span>
+                                            <span className="font-medium text-slate-700">{formatMoney(requisition.totalAmount)}</span>
+                                        </div>
+                                    </Link>
+                                );
+                            })}
                         </div>
-                    </div>
-                ))}
-
-                {!loading && activeTab === 'Vendors' && filteredVendors.length > visibleVendors.length && (
-                    <div className="text-center py-4">
-                        <button
-                            onClick={() => setVendorLimit(prev => prev + 20)}
-                            className="bg-white border border-slate-300 px-6 py-2.5 rounded-lg text-xs font-bold text-slate-700 active:bg-slate-50"
-                        >
-                            โหลดคู่ค้าเพิ่ม...
-                        </button>
-                    </div>
-                )}
-
-                {!loading && activeTab === 'Vendors' && filteredVendors.length === 0 && (
-                    <div className="text-center text-slate-400 py-10">
-                        {vendorSearch ? "ไม่พบร้านค้าที่ตรงกับคำค้นหา" : "ไม่มีข้อมูลร้านค้าหรือคู่ค้า"}
-                    </div>
-                )}
-
+                    )}
+                </section>
             </main>
         </div>
     );

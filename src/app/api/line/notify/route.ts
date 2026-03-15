@@ -1,5 +1,11 @@
-import { NextResponse } from "next/server";
+﻿import { NextResponse } from "next/server";
 import { adminDb } from "@/lib/firebaseAdmin";
+import {
+    getDocumentKindLabel,
+    isApprovedDocumentStatus,
+    isPendingDocumentStatus,
+    resolveDocumentKind,
+} from "@/lib/documentKinds";
 
 type LineSettings = {
     isEnabled?: boolean;
@@ -10,11 +16,13 @@ type LineSettings = {
     recipientAdminUids?: string[];
 };
 
+type NotifyRecord = Record<string, unknown>;
+
 type NotifyBody = {
     type?: string;
     docId?: string;
-    data?: any;
-    vendorData?: any;
+    data?: NotifyRecord;
+    vendorData?: NotifyRecord;
     projectName?: string;
 };
 
@@ -40,7 +48,7 @@ function toAmount(value: unknown): number {
 
 function extractLineErrorReason(errorData: unknown): string {
     if (!errorData || typeof errorData !== "object") {
-        return "ไม่สามารถระบุสาเหตุได้";
+        return "à¹„à¸¡à¹ˆà¸ªà¸²à¸¡à¸²à¸£à¸–à¸£à¸°à¸šà¸¸à¸ªà¸²à¹€à¸«à¸•à¸¸à¹„à¸”à¹‰";
     }
 
     const data = errorData as { message?: unknown; details?: unknown };
@@ -60,7 +68,7 @@ function extractLineErrorReason(errorData: unknown): string {
         }
     }
 
-    return "ไม่สามารถระบุสาเหตุได้";
+    return "à¹„à¸¡à¹ˆà¸ªà¸²à¸¡à¸²à¸£à¸–à¸£à¸°à¸šà¸¸à¸ªà¸²à¹€à¸«à¸•à¸¸à¹„à¸”à¹‰";
 }
 
 function isValidLineRecipientId(value: string): boolean {
@@ -70,7 +78,7 @@ function isValidLineRecipientId(value: string): boolean {
 }
 
 function formatAmount(value: unknown): string {
-    return `฿${toAmount(value).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+    return `à¸¿${toAmount(value).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
 
 function infoRow(
@@ -101,13 +109,13 @@ function infoRow(
 function buildPOFlex(params: {
     isPending: boolean;
     projectName?: string;
-    data?: any;
-    vendorData?: any;
+    data?: NotifyRecord;
+    vendorData?: NotifyRecord;
     approveUrl: string;
     hasApproveButton: boolean;
 }) {
     const { isPending, projectName, data, vendorData, approveUrl, hasApproveButton } = params;
-    const statusText = isPending ? "รออนุมัติ" : "อนุมัติแล้ว";
+    const statusText = isPending ? "à¸£à¸­à¸­à¸™à¸¸à¸¡à¸±à¸•à¸´" : "à¸­à¸™à¸¸à¸¡à¸±à¸•à¸´à¹à¸¥à¹‰à¸§";
 
     const footerContents: unknown[] = [];
     if (hasApproveButton) {
@@ -116,7 +124,7 @@ function buildPOFlex(params: {
             style: "primary",
             color: COLOR.primary,
             height: "sm",
-            action: { type: "uri", label: "ตรวจสอบและอนุมัติ", uri: approveUrl },
+            action: { type: "uri", label: "à¸•à¸£à¸§à¸ˆà¸ªà¸­à¸šà¹à¸¥à¸°à¸­à¸™à¸¸à¸¡à¸±à¸•à¸´", uri: approveUrl },
         });
     }
 
@@ -126,7 +134,7 @@ function buildPOFlex(params: {
             type: "button",
             style: "secondary",
             height: "sm",
-            action: { type: "uri", label: "โทรหลัก", uri: `tel:${vendorData.phone}` },
+            action: { type: "uri", label: "à¹‚à¸—à¸£à¸«à¸¥à¸±à¸", uri: `tel:${vendorData.phone}` },
         });
     }
     if (vendorData?.secondaryPhone) {
@@ -134,7 +142,7 @@ function buildPOFlex(params: {
             type: "button",
             style: "secondary",
             height: "sm",
-            action: { type: "uri", label: "โทรสำรอง", uri: `tel:${vendorData.secondaryPhone}` },
+            action: { type: "uri", label: "à¹‚à¸—à¸£à¸ªà¸³à¸£à¸­à¸‡", uri: `tel:${vendorData.secondaryPhone}` },
         });
     }
     if (vendorData?.googleMapUrl) {
@@ -142,7 +150,7 @@ function buildPOFlex(params: {
             type: "button",
             style: "secondary",
             height: "sm",
-            action: { type: "uri", label: "แผนที่", uri: vendorData.googleMapUrl },
+            action: { type: "uri", label: "à¹à¸œà¸™à¸—à¸µà¹ˆ", uri: vendorData.googleMapUrl },
         });
     }
     if (secondaryButtons.length > 0) {
@@ -162,20 +170,20 @@ function buildPOFlex(params: {
             layout: "vertical",
             spacing: "md",
             contents: [
-                { type: "text", text: asText(projectName, "ไม่ระบุโครงการ"), size: "sm", color: COLOR.title, weight: "bold", wrap: true },
+                { type: "text", text: asText(projectName, "à¹„à¸¡à¹ˆà¸£à¸°à¸šà¸¸à¹‚à¸„à¸£à¸‡à¸à¸²à¸£"), size: "sm", color: COLOR.title, weight: "bold", wrap: true },
                 { type: "separator", color: COLOR.border },
                 {
                     type: "box",
                     layout: "vertical",
                     spacing: "sm",
                     contents: [
-                        infoRow("ประเภทเอกสาร", "ใบสั่งซื้อ (PO)"),
-                        infoRow("สถานะ", statusText, { valueColor: COLOR.title, valueWeight: "bold" }),
-                        infoRow("เลขที่เอกสาร", asText(data?.poNumber)),
-                        infoRow("คู่ค้า", asText(vendorData?.name || data?.vendorName)),
-                        infoRow("เบอร์โทร", asText(vendorData?.phone)),
-                        ...(vendorData?.secondaryPhone ? [infoRow("เบอร์สำรอง", asText(vendorData.secondaryPhone))] : []),
-                        infoRow("ยอดรวมทั้งสิ้น", formatAmount(data?.totalAmount), { valueColor: COLOR.title, valueWeight: "bold" }),
+                        infoRow("à¸›à¸£à¸°à¹€à¸ à¸—à¹€à¸­à¸à¸ªà¸²à¸£", "à¹ƒà¸šà¸ªà¸±à¹ˆà¸‡à¸‹à¸·à¹‰à¸­ (PO)"),
+                        infoRow("à¸ªà¸–à¸²à¸™à¸°", statusText, { valueColor: COLOR.title, valueWeight: "bold" }),
+                        infoRow("à¹€à¸¥à¸‚à¸—à¸µà¹ˆà¹€à¸­à¸à¸ªà¸²à¸£", asText(data?.poNumber)),
+                        infoRow("à¸„à¸¹à¹ˆà¸„à¹‰à¸²", asText(vendorData?.name || data?.vendorName)),
+                        infoRow("à¹€à¸šà¸­à¸£à¹Œà¹‚à¸—à¸£", asText(vendorData?.phone)),
+                        ...(vendorData?.secondaryPhone ? [infoRow("à¹€à¸šà¸­à¸£à¹Œà¸ªà¸³à¸£à¸­à¸‡", asText(vendorData.secondaryPhone))] : []),
+                        infoRow("à¸¢à¸­à¸”à¸£à¸§à¸¡à¸—à¸±à¹‰à¸‡à¸ªà¸´à¹‰à¸™", formatAmount(data?.totalAmount), { valueColor: COLOR.title, valueWeight: "bold" }),
                     ],
                 },
             ],
@@ -198,12 +206,12 @@ function buildPOFlex(params: {
 function buildVOFlex(params: {
     isPending: boolean;
     projectName?: string;
-    data?: any;
+    data?: NotifyRecord;
     approveUrl: string;
     hasApproveButton: boolean;
 }) {
     const { isPending, projectName, data, approveUrl, hasApproveButton } = params;
-    const statusText = isPending ? "รออนุมัติ" : "อนุมัติแล้ว";
+    const statusText = isPending ? "à¸£à¸­à¸­à¸™à¸¸à¸¡à¸±à¸•à¸´" : "à¸­à¸™à¸¸à¸¡à¸±à¸•à¸´à¹à¸¥à¹‰à¸§";
     const impactValue = toAmount(data?.totalAmount);
 
     const footer = hasApproveButton
@@ -217,7 +225,7 @@ function buildVOFlex(params: {
                     style: "primary",
                     color: COLOR.primary,
                     height: "sm",
-                    action: { type: "uri", label: "ตรวจสอบและอนุมัติ", uri: approveUrl },
+                    action: { type: "uri", label: "à¸•à¸£à¸§à¸ˆà¸ªà¸­à¸šà¹à¸¥à¸°à¸­à¸™à¸¸à¸¡à¸±à¸•à¸´", uri: approveUrl },
                 },
             ],
         }
@@ -231,19 +239,19 @@ function buildVOFlex(params: {
             layout: "vertical",
             spacing: "md",
             contents: [
-                { type: "text", text: asText(projectName, "ไม่ระบุโครงการ"), size: "sm", color: COLOR.title, weight: "bold", wrap: true },
+                { type: "text", text: asText(projectName, "à¹„à¸¡à¹ˆà¸£à¸°à¸šà¸¸à¹‚à¸„à¸£à¸‡à¸à¸²à¸£"), size: "sm", color: COLOR.title, weight: "bold", wrap: true },
                 { type: "separator", color: COLOR.border },
                 {
                     type: "box",
                     layout: "vertical",
                     spacing: "sm",
                     contents: [
-                        infoRow("ประเภทเอกสาร", "งานเพิ่ม-ลด (VO)"),
-                        infoRow("สถานะ", statusText, { valueColor: COLOR.title, valueWeight: "bold" }),
-                        infoRow("เลขที่เอกสาร", asText(data?.voNumber)),
-                        infoRow("หัวข้อ", asText(data?.title)),
+                        infoRow("à¸›à¸£à¸°à¹€à¸ à¸—à¹€à¸­à¸à¸ªà¸²à¸£", "à¸‡à¸²à¸™à¹€à¸žà¸´à¹ˆà¸¡-à¸¥à¸” (VO)"),
+                        infoRow("à¸ªà¸–à¸²à¸™à¸°", statusText, { valueColor: COLOR.title, valueWeight: "bold" }),
+                        infoRow("à¹€à¸¥à¸‚à¸—à¸µà¹ˆà¹€à¸­à¸à¸ªà¸²à¸£", asText(data?.voNumber)),
+                        infoRow("à¸«à¸±à¸§à¸‚à¹‰à¸­", asText(data?.title)),
                         infoRow(
-                            "ผลกระทบงบประมาณ",
+                            "à¸œà¸¥à¸à¸£à¸°à¸—à¸šà¸‡à¸šà¸›à¸£à¸°à¸¡à¸²à¸“",
                             `${impactValue > 0 ? "+" : ""}${formatAmount(impactValue)}`,
                             { valueColor: COLOR.title, valueWeight: "bold" }
                         ),
@@ -268,7 +276,7 @@ function buildWCFlex(params: {
     hasApproveButton: boolean;
 }) {
     const { isPending, projectName, data, vendorData, approveUrl, hasApproveButton } = params;
-    const statusText = isPending ? "รออนุมัติ" : "อนุมัติแล้ว";
+    const statusText = isPending ? "à¸£à¸­à¸­à¸™à¸¸à¸¡à¸±à¸•à¸´" : "à¸­à¸™à¸¸à¸¡à¸±à¸•à¸´à¹à¸¥à¹‰à¸§";
     const docData = (data && typeof data === "object") ? (data as Record<string, unknown>) : {};
     const vendorInfo = (vendorData && typeof vendorData === "object") ? (vendorData as Record<string, unknown>) : {};
 
@@ -279,7 +287,7 @@ function buildWCFlex(params: {
             style: "primary",
             color: COLOR.primary,
             height: "sm",
-            action: { type: "uri", label: "ตรวจสอบและอนุมัติ", uri: approveUrl },
+            action: { type: "uri", label: "à¸•à¸£à¸§à¸ˆà¸ªà¸­à¸šà¹à¸¥à¸°à¸­à¸™à¸¸à¸¡à¸±à¸•à¸´", uri: approveUrl },
         });
     }
 
@@ -289,7 +297,7 @@ function buildWCFlex(params: {
             type: "button",
             style: "secondary",
             height: "sm",
-            action: { type: "uri", label: "โทรหลัก", uri: `tel:${asText(vendorInfo.phone, "")}` },
+            action: { type: "uri", label: "à¹‚à¸—à¸£à¸«à¸¥à¸±à¸", uri: `tel:${asText(vendorInfo.phone, "")}` },
         });
     }
     if (vendorInfo.secondaryPhone) {
@@ -297,7 +305,7 @@ function buildWCFlex(params: {
             type: "button",
             style: "secondary",
             height: "sm",
-            action: { type: "uri", label: "โทรสำรอง", uri: `tel:${asText(vendorInfo.secondaryPhone, "")}` },
+            action: { type: "uri", label: "à¹‚à¸—à¸£à¸ªà¸³à¸£à¸­à¸‡", uri: `tel:${asText(vendorInfo.secondaryPhone, "")}` },
         });
     }
     if (secondaryButtons.length > 0) {
@@ -317,20 +325,20 @@ function buildWCFlex(params: {
             layout: "vertical",
             spacing: "md",
             contents: [
-                { type: "text", text: asText(projectName, "ไม่ระบุโครงการ"), size: "sm", color: COLOR.title, weight: "bold", wrap: true },
+                { type: "text", text: asText(projectName, "à¹„à¸¡à¹ˆà¸£à¸°à¸šà¸¸à¹‚à¸„à¸£à¸‡à¸à¸²à¸£"), size: "sm", color: COLOR.title, weight: "bold", wrap: true },
                 { type: "separator", color: COLOR.border },
                 {
                     type: "box",
                     layout: "vertical",
                     spacing: "sm",
                     contents: [
-                        infoRow("ประเภทเอกสาร", "ใบจ้างงาน (WC)"),
-                        infoRow("สถานะ", statusText, { valueColor: COLOR.title, valueWeight: "bold" }),
-                        infoRow("เลขที่เอกสาร", asText(docData.wcNumber)),
-                        infoRow("ผู้รับจ้าง", asText(vendorInfo.name || docData.vendorName)),
-                        infoRow("เบอร์โทร", asText(vendorInfo.phone)),
-                        ...(vendorInfo.secondaryPhone ? [infoRow("เบอร์สำรอง", asText(vendorInfo.secondaryPhone))] : []),
-                        infoRow("ยอดรวมทั้งสิ้น", formatAmount(docData.totalAmount), { valueColor: COLOR.title, valueWeight: "bold" }),
+                        infoRow("à¸›à¸£à¸°à¹€à¸ à¸—à¹€à¸­à¸à¸ªà¸²à¸£", "à¹ƒà¸šà¸ˆà¹‰à¸²à¸‡à¸‡à¸²à¸™ (WC)"),
+                        infoRow("à¸ªà¸–à¸²à¸™à¸°", statusText, { valueColor: COLOR.title, valueWeight: "bold" }),
+                        infoRow("à¹€à¸¥à¸‚à¸—à¸µà¹ˆà¹€à¸­à¸à¸ªà¸²à¸£", asText(docData.wcNumber)),
+                        infoRow("à¸œà¸¹à¹‰à¸£à¸±à¸šà¸ˆà¹‰à¸²à¸‡", asText(vendorInfo.name || docData.vendorName)),
+                        infoRow("à¹€à¸šà¸­à¸£à¹Œà¹‚à¸—à¸£", asText(vendorInfo.phone)),
+                        ...(vendorInfo.secondaryPhone ? [infoRow("à¹€à¸šà¸­à¸£à¹Œà¸ªà¸³à¸£à¸­à¸‡", asText(vendorInfo.secondaryPhone))] : []),
+                        infoRow("à¸¢à¸­à¸”à¸£à¸§à¸¡à¸—à¸±à¹‰à¸‡à¸ªà¸´à¹‰à¸™", formatAmount(docData.totalAmount), { valueColor: COLOR.title, valueWeight: "bold" }),
                     ],
                 },
             ],
@@ -343,6 +351,126 @@ function buildWCFlex(params: {
                 contents: footerContents,
             }
             : undefined,
+        styles: {
+            body: { backgroundColor: "#ffffff" },
+            footer: { backgroundColor: COLOR.surface, separator: true },
+        },
+    };
+}
+
+function buildPRFlex(params: {
+    isPending: boolean;
+    projectName?: string;
+    data?: NotifyRecord;
+    approveUrl: string;
+    hasApproveButton: boolean;
+}) {
+    const { isPending, projectName, data, approveUrl, hasApproveButton } = params;
+    const statusText = isPending ? "à¸£à¸­à¸­à¸™à¸¸à¸¡à¸±à¸•à¸´" : "à¸­à¸™à¸¸à¸¡à¸±à¸•à¸´à¹ƒà¸«à¹‰à¸ˆà¸±à¸”à¸«à¸²à¹à¸¥à¹‰à¸§";
+    const footer = hasApproveButton
+        ? {
+            type: "box",
+            layout: "vertical",
+            spacing: "sm",
+            contents: [
+                {
+                    type: "button",
+                    style: "primary",
+                    color: COLOR.primary,
+                    height: "sm",
+                    action: { type: "uri", label: "à¸•à¸£à¸§à¸ˆà¸ªà¸­à¸šà¹à¸¥à¸°à¸­à¸™à¸¸à¸¡à¸±à¸•à¸´", uri: approveUrl },
+                },
+            ],
+        }
+        : undefined;
+
+    return {
+        type: "bubble",
+        size: "mega",
+        body: {
+            type: "box",
+            layout: "vertical",
+            spacing: "md",
+            contents: [
+                { type: "text", text: asText(projectName, "à¹„à¸¡à¹ˆà¸£à¸°à¸šà¸¸à¹‚à¸„à¸£à¸‡à¸à¸²à¸£"), size: "sm", color: COLOR.title, weight: "bold", wrap: true },
+                { type: "separator", color: COLOR.border },
+                {
+                    type: "box",
+                    layout: "vertical",
+                    spacing: "sm",
+                    contents: [
+                        infoRow("à¸›à¸£à¸°à¹€à¸ à¸—à¹€à¸­à¸à¸ªà¸²à¸£", "à¹ƒà¸šà¸‚à¸­à¸‹à¸·à¹‰à¸­/à¸‚à¸­à¸ˆà¹‰à¸²à¸‡ (PR)"),
+                        infoRow("à¸ªà¸–à¸²à¸™à¸°", statusText, { valueColor: COLOR.title, valueWeight: "bold" }),
+                        infoRow("à¹€à¸¥à¸‚à¸—à¸µà¹ˆà¹€à¸­à¸à¸ªà¸²à¸£", asText(data?.prNumber)),
+                        infoRow("à¸«à¸±à¸§à¸‚à¹‰à¸­", asText(data?.title)),
+                        infoRow("à¸œà¸¹à¹‰à¸‚à¸­", asText(data?.requestedByName)),
+                        infoRow("à¸£à¸¹à¸›à¹à¸šà¸šà¸›à¸¥à¸²à¸¢à¸—à¸²à¸‡", asText(data?.fulfillmentType === "wc" ? "à¸­à¸­à¸ WC" : "à¸­à¸­à¸ PO")),
+                        infoRow("à¸¡à¸¹à¸¥à¸„à¹ˆà¸²à¸£à¸§à¸¡à¹‚à¸”à¸¢à¸›à¸£à¸°à¸¡à¸²à¸“", formatAmount(data?.totalAmount), { valueColor: COLOR.title, valueWeight: "bold" }),
+                    ],
+                },
+            ],
+        },
+        footer,
+        styles: {
+            body: { backgroundColor: "#ffffff" },
+            footer: { backgroundColor: COLOR.surface, separator: true },
+        },
+    };
+}
+
+function buildPCFlex(params: {
+    isPending: boolean;
+    projectName?: string;
+    data?: NotifyRecord;
+    approveUrl: string;
+    hasApproveButton: boolean;
+}) {
+    const { isPending, projectName, data, approveUrl, hasApproveButton } = params;
+    const statusText = isPending ? "à¸£à¸­à¸­à¸™à¸¸à¸¡à¸±à¸•à¸´à¸œà¸¥à¹€à¸—à¸µà¸¢à¸šà¸£à¸²à¸„à¸²" : "à¸­à¸™à¸¸à¸¡à¸±à¸•à¸´à¸œà¸¥à¹€à¸—à¸µà¸¢à¸šà¸£à¸²à¸„à¸²à¹à¸¥à¹‰à¸§";
+    const footer = hasApproveButton
+        ? {
+            type: "box",
+            layout: "vertical",
+            spacing: "sm",
+            contents: [
+                {
+                    type: "button",
+                    style: "primary",
+                    color: COLOR.primary,
+                    height: "sm",
+                    action: { type: "uri", label: "à¸•à¸£à¸§à¸ˆà¸ªà¸­à¸šà¹à¸¥à¸°à¸­à¸™à¸¸à¸¡à¸±à¸•à¸´", uri: approveUrl },
+                },
+            ],
+        }
+        : undefined;
+
+    return {
+        type: "bubble",
+        size: "mega",
+        body: {
+            type: "box",
+            layout: "vertical",
+            spacing: "md",
+            contents: [
+                { type: "text", text: asText(projectName, "à¹„à¸¡à¹ˆà¸£à¸°à¸šà¸¸à¹‚à¸„à¸£à¸‡à¸à¸²à¸£"), size: "sm", color: COLOR.title, weight: "bold", wrap: true },
+                { type: "separator", color: COLOR.border },
+                {
+                    type: "box",
+                    layout: "vertical",
+                    spacing: "sm",
+                    contents: [
+                        infoRow("à¸›à¸£à¸°à¹€à¸ à¸—à¹€à¸­à¸à¸ªà¸²à¸£", "à¹€à¸­à¸à¸ªà¸²à¸£à¹€à¸—à¸µà¸¢à¸šà¸£à¸²à¸„à¸² (PC)"),
+                        infoRow("à¸ªà¸–à¸²à¸™à¸°", statusText, { valueColor: COLOR.title, valueWeight: "bold" }),
+                        infoRow("à¹€à¸¥à¸‚à¸—à¸µà¹ˆà¹€à¸­à¸à¸ªà¸²à¸£", asText(data?.comparisonNumber)),
+                        infoRow("PR à¸•à¹‰à¸™à¸—à¸²à¸‡", asText(data?.prNumber)),
+                        infoRow("à¸«à¸±à¸§à¸‚à¹‰à¸­", asText(data?.title)),
+                        infoRow("à¸œà¸¹à¹‰à¸—à¸µà¹ˆà¹€à¸ªà¸™à¸­à¹€à¸¥à¸·à¸­à¸", asText(data?.recommendedSupplierName)),
+                        infoRow("à¸¢à¸­à¸”à¸—à¸µà¹ˆà¹€à¸ªà¸™à¸­à¹€à¸¥à¸·à¸­à¸", formatAmount(data?.recommendedTotalAmount), { valueColor: COLOR.title, valueWeight: "bold" }),
+                    ],
+                },
+            ],
+        },
+        footer,
         styles: {
             body: { backgroundColor: "#ffffff" },
             footer: { backgroundColor: COLOR.surface, separator: true },
@@ -425,8 +553,9 @@ export async function POST(request: Request) {
         }
 
         let requesterLineId: string | null = null;
-        if (data?.createdBy) {
-            const userDoc = await adminDb.collection("users").doc(data.createdBy).get();
+        const requesterUid = asText(data?.requestedByUid || data?.createdBy, "");
+        if (requesterUid) {
+            const userDoc = await adminDb.collection("users").doc(requesterUid).get();
             if (userDoc.exists) {
                 requesterLineId = asText(userDoc.data()?.lineUserId, "") || null;
             }
@@ -446,7 +575,7 @@ export async function POST(request: Request) {
                 return NextResponse.json(
                     {
                         success: false,
-                        message: `พบ LINE ID รูปแบบไม่ถูกต้อง: ${invalidConfiguredTargets.join(", ")}`,
+                        message: `à¸žà¸š LINE ID à¸£à¸¹à¸›à¹à¸šà¸šà¹„à¸¡à¹ˆà¸–à¸¹à¸à¸•à¹‰à¸­à¸‡: ${invalidConfiguredTargets.join(", ")}`,
                         invalidTargets: invalidConfiguredTargets,
                     },
                     { status: 400 }
@@ -462,7 +591,7 @@ export async function POST(request: Request) {
                 return NextResponse.json(
                     {
                         success: false,
-                        message: "ไม่พบ LINE ID ของแอดมินที่เลือก กรุณาผูกบัญชี LINE ในหน้า Users ก่อน",
+                        message: "à¹„à¸¡à¹ˆà¸žà¸š LINE ID à¸‚à¸­à¸‡à¹à¸­à¸”à¸¡à¸´à¸™à¸—à¸µà¹ˆà¹€à¸¥à¸·à¸­à¸ à¸à¸£à¸¸à¸“à¸²à¸œà¸¹à¸à¸šà¸±à¸à¸Šà¸µ LINE à¹ƒà¸™à¸«à¸™à¹‰à¸² Users à¸à¹ˆà¸­à¸™",
                     },
                     { status: 400 }
                 );
@@ -474,16 +603,18 @@ export async function POST(request: Request) {
         const liffId = process.env.NEXT_PUBLIC_LIFF_ID || "";
         const approveUrl = `https://liff.line.me/${liffId}/approve?type=${type}&id=${data?.id || ""}`;
         const viewUrl = `https://liff.line.me/${liffId}/view?type=${type}&id=${data?.id || ""}`;
-        const isPending = data?.status === "pending";
-        const isApproved = data?.status === "approved";
+        const normalizedKind = type ? resolveDocumentKind(type) : null;
+        const documentStatus = asText(data?.status, "") || undefined;
+        const isPending = normalizedKind ? isPendingDocumentStatus(normalizedKind, documentStatus) : documentStatus === "pending";
+        const isApproved = normalizedKind ? isApprovedDocumentStatus(normalizedKind, documentStatus) : documentStatus === "approved";
         const actionUrl = isPending ? approveUrl : viewUrl;
         const hasActionButton = (isPending || isApproved) && !!liffId;
 
-        let altText = "แจ้งเตือนเอกสาร";
-        let flexContents: any = {};
+        let altText = "à¹à¸ˆà¹‰à¸‡à¹€à¸•à¸·à¸­à¸™à¹€à¸­à¸à¸ªà¸²à¸£";
+        let flexContents: unknown = {};
         if (type === "PO") {
             const poNo = asText(data?.poNumber, "-");
-            altText = isPending ? `PO รออนุมัติ - ${poNo}` : `PO อนุมัติแล้ว - ${poNo}`;
+            altText = isPending ? `PO à¸£à¸­à¸­à¸™à¸¸à¸¡à¸±à¸•à¸´ - ${poNo}` : `PO à¸­à¸™à¸¸à¸¡à¸±à¸•à¸´à¹à¸¥à¹‰à¸§ - ${poNo}`;
             flexContents = buildPOFlex({
                 isPending,
                 projectName,
@@ -494,7 +625,7 @@ export async function POST(request: Request) {
             });
         } else if (type === "VO") {
             const voNo = asText(data?.voNumber, "-");
-            altText = isPending ? `VO รออนุมัติ - ${voNo}` : `VO อนุมัติแล้ว - ${voNo}`;
+            altText = isPending ? `VO à¸£à¸­à¸­à¸™à¸¸à¸¡à¸±à¸•à¸´ - ${voNo}` : `VO à¸­à¸™à¸¸à¸¡à¸±à¸•à¸´à¹à¸¥à¹‰à¸§ - ${voNo}`;
             flexContents = buildVOFlex({
                 isPending,
                 projectName,
@@ -504,7 +635,7 @@ export async function POST(request: Request) {
             });
         } else if (type === "WC") {
             const wcNo = asText(data?.wcNumber, "-");
-            altText = isPending ? `WC รออนุมัติ - ${wcNo}` : `WC อนุมัติแล้ว - ${wcNo}`;
+            altText = isPending ? `WC à¸£à¸­à¸­à¸™à¸¸à¸¡à¸±à¸•à¸´ - ${wcNo}` : `WC à¸­à¸™à¸¸à¸¡à¸±à¸•à¸´à¹à¸¥à¹‰à¸§ - ${wcNo}`;
             flexContents = buildWCFlex({
                 isPending,
                 projectName,
@@ -513,18 +644,38 @@ export async function POST(request: Request) {
                 approveUrl: actionUrl,
                 hasApproveButton: hasActionButton,
             });
+        } else if (type === "PR") {
+            const prNo = asText(data?.prNumber, "-");
+            altText = isPending ? `PR à¸£à¸­à¸­à¸™à¸¸à¸¡à¸±à¸•à¸´ - ${prNo}` : `PR à¸­à¸™à¸¸à¸¡à¸±à¸•à¸´à¹ƒà¸«à¹‰à¸ˆà¸±à¸”à¸«à¸² - ${prNo}`;
+            flexContents = buildPRFlex({
+                isPending,
+                projectName,
+                data,
+                approveUrl: actionUrl,
+                hasApproveButton: hasActionButton,
+            });
+        } else if (type === "PC") {
+            const comparisonNo = asText(data?.comparisonNumber, "-");
+            altText = isPending ? `PC à¸£à¸­à¸­à¸™à¸¸à¸¡à¸±à¸•à¸´ - ${comparisonNo}` : `PC à¸­à¸™à¸¸à¸¡à¸±à¸•à¸´à¹à¸¥à¹‰à¸§ - ${comparisonNo}`;
+            flexContents = buildPCFlex({
+                isPending,
+                projectName,
+                data,
+                approveUrl: actionUrl,
+                hasApproveButton: hasActionButton,
+            });
         } else {
-            altText = `แจ้งเตือนเอกสาร - ${asText(type, "N/A")}`;
+            altText = `à¹à¸ˆà¹‰à¸‡à¹€à¸•à¸·à¸­à¸™à¹€à¸­à¸à¸ªà¸²à¸£ - ${asText(type, "N/A")}`;
             flexContents = {
                 type: "bubble",
                 body: {
                     type: "box",
                     layout: "vertical",
                     contents: [
-                        { type: "text", text: asText(projectName, "ไม่ระบุโครงการ"), size: "sm", color: COLOR.title, weight: "bold", wrap: true },
+                        { type: "text", text: asText(projectName, "à¹„à¸¡à¹ˆà¸£à¸°à¸šà¸¸à¹‚à¸„à¸£à¸‡à¸à¸²à¸£"), size: "sm", color: COLOR.title, weight: "bold", wrap: true },
                         { type: "separator", color: COLOR.border, margin: "md" },
-                        infoRow("ประเภทเอกสาร", asText(type, "ไม่ระบุ")),
-                        infoRow("สถานะ", asText(data?.status, "-"), { valueColor: COLOR.title, valueWeight: "bold" }),
+                        infoRow("à¸›à¸£à¸°à¹€à¸ à¸—à¹€à¸­à¸à¸ªà¸²à¸£", normalizedKind ? getDocumentKindLabel(normalizedKind) : asText(type, "à¹„à¸¡à¹ˆà¸£à¸°à¸šà¸¸")),
+                        infoRow("à¸ªà¸–à¸²à¸™à¸°", asText(data?.status, "-"), { valueColor: COLOR.title, valueWeight: "bold" }),
                     ],
                     spacing: "md",
                 },
@@ -538,7 +689,7 @@ export async function POST(request: Request) {
             const bubble = flexContents as { footer?: { contents?: Array<{ type?: string; action?: { label?: string } }> } };
             const primaryButton = bubble.footer?.contents?.find((item) => item?.type === "button");
             if (primaryButton?.action) {
-                primaryButton.action.label = "ดูข้อมูลเอกสาร";
+                primaryButton.action.label = "à¸”à¸¹à¸‚à¹‰à¸­à¸¡à¸¹à¸¥à¹€à¸­à¸à¸ªà¸²à¸£";
             }
         }
 
@@ -585,11 +736,11 @@ export async function POST(request: Request) {
 
         if (successTargets.length === 0) {
             console.error("LINE API Error:", failedTargets);
-            const firstFailedReason = failedTargets[0]?.reason || "ไม่สามารถระบุสาเหตุได้";
+            const firstFailedReason = failedTargets[0]?.reason || "à¹„à¸¡à¹ˆà¸ªà¸²à¸¡à¸²à¸£à¸–à¸£à¸°à¸šà¸¸à¸ªà¸²à¹€à¸«à¸•à¸¸à¹„à¸”à¹‰";
             return NextResponse.json(
                 {
                     success: false,
-                    message: `ส่งแจ้งเตือน LINE ไม่สำเร็จ (${failedTargets.length} ผู้รับ): ${firstFailedReason}`,
+                    message: `à¸ªà¹ˆà¸‡à¹à¸ˆà¹‰à¸‡à¹€à¸•à¸·à¸­à¸™ LINE à¹„à¸¡à¹ˆà¸ªà¸³à¹€à¸£à¹‡à¸ˆ (${failedTargets.length} à¸œà¸¹à¹‰à¸£à¸±à¸š): ${firstFailedReason}`,
                     firstFailedReason,
                     failedTargets,
                 },
@@ -599,11 +750,11 @@ export async function POST(request: Request) {
 
         if (failedTargets.length > 0) {
             console.warn("LINE API Partial Success:", { successTargets, failedTargets });
-            const firstFailedReason = failedTargets[0]?.reason || "ไม่สามารถระบุสาเหตุได้";
+            const firstFailedReason = failedTargets[0]?.reason || "à¹„à¸¡à¹ˆà¸ªà¸²à¸¡à¸²à¸£à¸–à¸£à¸°à¸šà¸¸à¸ªà¸²à¹€à¸«à¸•à¸¸à¹„à¸”à¹‰";
             return NextResponse.json({
                 success: true,
                 partial: true,
-                message: `ส่งแจ้งเตือนได้ ${successTargets.length} รายการ และไม่สำเร็จ ${failedTargets.length} รายการ: ${firstFailedReason}`,
+                message: `à¸ªà¹ˆà¸‡à¹à¸ˆà¹‰à¸‡à¹€à¸•à¸·à¸­à¸™à¹„à¸”à¹‰ ${successTargets.length} à¸£à¸²à¸¢à¸à¸²à¸£ à¹à¸¥à¸°à¹„à¸¡à¹ˆà¸ªà¸³à¹€à¸£à¹‡à¸ˆ ${failedTargets.length} à¸£à¸²à¸¢à¸à¸²à¸£: ${firstFailedReason}`,
                 recipientCount: successTargets.length,
                 failedCount: failedTargets.length,
                 firstFailedReason,
@@ -613,11 +764,15 @@ export async function POST(request: Request) {
 
         return NextResponse.json({
             success: true,
-            message: "ส่งแจ้งเตือนสำเร็จ",
+            message: "à¸ªà¹ˆà¸‡à¹à¸ˆà¹‰à¸‡à¹€à¸•à¸·à¸­à¸™à¸ªà¸³à¹€à¸£à¹‡à¸ˆ",
             recipientCount: successTargets.length,
         });
-    } catch (error: any) {
+    } catch (error: unknown) {
         console.error("Error sending LINE notification:", error);
-        return NextResponse.json({ success: false, error: error.message }, { status: 500 });
+        return NextResponse.json(
+            { success: false, error: error instanceof Error ? error.message : "Unknown error" },
+            { status: 500 }
+        );
     }
 }
+

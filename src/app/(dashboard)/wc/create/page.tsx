@@ -1,17 +1,23 @@
 ﻿"use client";
 
 import { useProject } from "@/context/ProjectContext";
-import { ArrowLeft, Save, FileText, Send, Plus, Loader2, Search, ChevronDown, Upload } from "lucide-react";
+import { ArrowLeft, Save, FileText, Send, Plus, Loader2, Search, ChevronDown, Upload, Download } from "lucide-react";
 import Link from "next/link";
 import { useState, useEffect, ChangeEvent } from "react";
 import { WCItem } from "@/types/wc";
 import { useAuth } from "@/context/AuthContext";
-import { collection, addDoc, serverTimestamp, query, where, getDocs, doc, getDoc, orderBy, limit } from "firebase/firestore";
+import { collection, addDoc, serverTimestamp, query, where, getDocs, doc, getDoc, orderBy, limit, updateDoc } from "firebase/firestore";
 import { db } from "@/lib/firebase";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { Contractor } from "@/types/contractor";
-import { parseDocumentItemsCsv, PROCESSING_FEE_LABEL, FUEL_FEE_LABEL } from "@/lib/documentItems";
+import type { PurchaseRequisition } from "@/types/pr";
+import type { PriceComparison } from "@/types/priceComparison";
+import { parseDocumentItemsCsv, PROCESSING_FEE_LABEL, FUEL_FEE_LABEL, downloadDocumentItemsCsvTemplate } from "@/lib/documentItems";
 import { buildDocumentNumber, buildDocumentPrefix, normalizeProjectCode, parseDocumentSequence } from "@/lib/documentNumbers";
+import {
+    appendLinkedDocumentId,
+    getPurchaseRequisitionConvertedStatus,
+} from "@/lib/purchaseRequisition";
 
 type SignatureOption = {
     id: string;
@@ -38,6 +44,7 @@ export default function CreateWCPage() {
     const { currentProject } = useProject();
     const { user, userProfile } = useAuth();
     const router = useRouter();
+    const searchParams = useSearchParams();
 
     const createEmptyItem = (id: string): Partial<WCItem> => ({
         id,
@@ -80,6 +87,13 @@ export default function CreateWCPage() {
     const [selectedSignatureId, setSelectedSignatureId] = useState("");
     const [selectedPaymentTermTemplate, setSelectedPaymentTermTemplate] = useState("");
     const [selectedNoteTemplate, setSelectedNoteTemplate] = useState("");
+    const [sourceRequisition, setSourceRequisition] = useState<PurchaseRequisition | null>(null);
+    const [sourceComparison, setSourceComparison] = useState<PriceComparison | null>(null);
+    const [sourceLoading, setSourceLoading] = useState(false);
+    const [sourcePrefilled, setSourcePrefilled] = useState(false);
+
+    const sourcePrId = searchParams.get("prId") || "";
+    const sourceComparisonId = searchParams.get("comparisonId") || "";
 
     // Vendor Search
     const [searchVendor, setSearchVendor] = useState("");
@@ -156,6 +170,54 @@ export default function CreateWCPage() {
     }, [wcType, currentProject?.code]);
 
     useEffect(() => {
+        setSourcePrefilled(false);
+        if (!sourcePrId && !sourceComparisonId) {
+            setSourceComparison(null);
+            setSourceRequisition(null);
+            setSourceLoading(false);
+            return;
+        }
+
+        let active = true;
+        async function fetchSourceDocuments() {
+            setSourceLoading(true);
+            try {
+                let nextComparison: PriceComparison | null = null;
+                if (sourceComparisonId) {
+                    const comparisonSnap = await getDoc(doc(db, "pr_price_comparisons", sourceComparisonId));
+                    if (comparisonSnap.exists()) {
+                        nextComparison = { id: comparisonSnap.id, ...comparisonSnap.data() } as PriceComparison;
+                    }
+                }
+
+                const resolvedPrId = sourcePrId || nextComparison?.prId || "";
+                let nextRequisition: PurchaseRequisition | null = null;
+                if (resolvedPrId) {
+                    const requisitionSnap = await getDoc(doc(db, "purchase_requisitions", resolvedPrId));
+                    if (requisitionSnap.exists()) {
+                        nextRequisition = { id: requisitionSnap.id, ...requisitionSnap.data() } as PurchaseRequisition;
+                    }
+                }
+
+                if (!active) return;
+                setSourceComparison(nextComparison);
+                setSourceRequisition(nextRequisition);
+            } catch (error) {
+                console.error("Error loading WC conversion source:", error);
+            } finally {
+                if (active) {
+                    setSourceLoading(false);
+                }
+            }
+        }
+
+        void fetchSourceDocuments();
+        return () => {
+            active = false;
+        };
+    }, [sourcePrId, sourceComparisonId]);
+
+    useEffect(() => {
         async function fetchVendors() {
             try {
                 const q = query(collection(db, "contractors"), where("isActive", "==", true));
@@ -201,6 +263,46 @@ export default function CreateWCPage() {
         fetchVendors();
         fetchCompanySettings();
     }, []);
+
+    useEffect(() => {
+        if (!sourceRequisition || sourcePrefilled) return;
+
+        const selectedQuote = sourceComparison
+            ? sourceComparison.quotes.find((quote) => quote.id === sourceComparison.recommendedQuoteId) ||
+            sourceComparison.quotes.find((quote) => quote.id === sourceComparison.autoRecommendedQuoteId) ||
+            null
+            : null;
+
+        if (selectedQuote) {
+            setItems(selectedQuote.items.map((item, index) => ({
+                id: item.requisitionItemId || item.id || `source-item-${index + 1}`,
+                description: item.description,
+                quantity: Number(item.quantity) || 0,
+                unit: item.unit || "",
+                unitPrice: Number(item.unitPrice) || 0,
+                amount: Number(item.amount) || 0,
+                isClosed: false,
+            })));
+            setVatMode(selectedQuote.vatMode || sourceRequisition.vatMode || "exclusive");
+            if (selectedQuote.supplierType === "contractor" && selectedQuote.supplierId) {
+                setVendorId(selectedQuote.supplierId);
+            }
+        } else {
+            setItems(sourceRequisition.items.map((item, index) => ({
+                id: item.id || `source-item-${index + 1}`,
+                description: item.description,
+                quantity: Number(item.quantity) || 0,
+                unit: item.unit || "",
+                unitPrice: Number(item.unitPrice) || 0,
+                amount: Number(item.amount) || 0,
+                isClosed: false,
+            })));
+            setVatMode(sourceRequisition.vatMode || "exclusive");
+        }
+
+        setTitle((current) => current || sourceRequisition.title || "");
+        setSourcePrefilled(true);
+    }, [sourceComparison, sourcePrefilled, sourceRequisition]);
 
     const handleAddItem = () => {
         setItems([...items, createEmptyItem(Date.now().toString())]);
@@ -269,6 +371,10 @@ export default function CreateWCPage() {
         reader.readAsText(file, "utf-8");
     };
 
+    const handleDownloadCsvSample = () => {
+        downloadDocumentItemsCsvTemplate("wc-items-sample.csv");
+    };
+
     const normalizedProcessingFee = Math.max(0, Number(processingFee) || 0);
     const normalizedFuelFee = Math.max(0, Number(fuelFee) || 0);
     const itemsTotalBeforeFee = items.reduce((sum, item) => sum + (item.amount || 0), 0);
@@ -288,6 +394,8 @@ export default function CreateWCPage() {
         if (!user) { alert("ไม่พบข้อมูลผู้ใช้งานหรือไม่มีสิทธิ์ดำเนินการ"); return; }
         if (!vendorId) { alert("กรุณาเลือกผู้รับจ้าง"); return; }
         if (!wcNumber.trim()) { alert("กรุณาระบุเลขที่ใบจ้างงาน"); return; }
+        if (sourceRequisition && sourceRequisition.fulfillmentType !== "wc") { alert("PR ต้นทางนี้ต้องออกเป็น PO ไม่ใช่ WC"); return; }
+        if (sourceComparison && sourceComparison.status !== "approved") { alert("ต้องอนุมัติผลเทียบราคาก่อนจึงจะออก WC ได้"); return; }
 
         setSaving(true);
 
@@ -339,6 +447,8 @@ export default function CreateWCPage() {
                 wcNumber: wcNumber.trim(),
                 wcType: wcType,
                 projectId: currentProject.id,
+                ...(sourceRequisition?.id ? { sourcePrId: sourceRequisition.id } : {}),
+                ...(sourceComparison?.id ? { sourceComparisonId: sourceComparison.id } : {}),
                 vendorId: vendorId || "unknown",
                 vendorName: selectedVendor ? selectedVendor.fullName : "ไม่ระบุผู้รับจ้าง",
                 title: title.trim(),
@@ -362,6 +472,22 @@ export default function CreateWCPage() {
             };
 
             const docRef = await addDoc(collection(db, "work_contracts"), newWC);
+
+            if (sourceRequisition) {
+                const nextLinkedWcIds = appendLinkedDocumentId(sourceRequisition.linkedWcIds, docRef.id);
+                await updateDoc(doc(db, "purchase_requisitions", sourceRequisition.id), {
+                    linkedWcIds: nextLinkedWcIds,
+                    currentComparisonId: sourceComparison?.id || sourceRequisition.currentComparisonId || "",
+                    selectedComparisonId: sourceComparison?.id || sourceRequisition.selectedComparisonId || "",
+                    status: getPurchaseRequisitionConvertedStatus({
+                        fulfillmentType: sourceRequisition.fulfillmentType,
+                        linkedPoIds: sourceRequisition.linkedPoIds,
+                        linkedWcIds: nextLinkedWcIds,
+                        fallbackStatus: sourceRequisition.status,
+                    }),
+                    updatedAt: serverTimestamp(),
+                });
+            }
 
             if (status === "pending") {
                 try {
@@ -388,7 +514,7 @@ export default function CreateWCPage() {
 
             setSuccess(true);
             setTimeout(() => {
-                router.push("/wc");
+                router.push(sourceRequisition ? `/wc/${docRef.id}` : "/wc");
             }, 2000);
 
         } catch (error) {
@@ -411,8 +537,28 @@ export default function CreateWCPage() {
         );
     }
 
+    if (sourceLoading) {
+        return (
+            <div className="flex flex-col items-center justify-center p-12">
+                <Loader2 className="animate-spin w-8 h-8 text-emerald-600 mb-4" />
+                <p className="text-slate-500">กำลังโหลดข้อมูลต้นทางสำหรับออก WC...</p>
+            </div>
+        );
+    }
+
     return (
         <div className="max-w-5xl mx-auto space-y-6">
+
+            {sourceRequisition && (
+                <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-900">
+                    <p className="font-semibold">สร้าง WC จากเอกสารอนุมัติ</p>
+                    <p className="mt-1">
+                        PR: {sourceRequisition.prNumber}
+                        {sourceComparison ? ` • PC: ${sourceComparison.comparisonNumber}` : ""}
+                    </p>
+                    <p className="mt-1">{sourceRequisition.title}</p>
+                </div>
+            )}
 
             {/* Header */}
             <div className="flex items-center justify-between">
@@ -686,7 +832,6 @@ export default function CreateWCPage() {
                                     />
                                     <span className="font-semibold text-emerald-700">ปิดราคาทุกรายการ</span>
                                 </label>
-                                <p className="text-xs text-slate-500">รองรับ CSV: description, quantity, unit, unitPrice (มีหัวตารางหรือไม่มีก็ได้)</p>
                             </div>
                         </div>
 
@@ -827,6 +972,13 @@ export default function CreateWCPage() {
                                         <Upload size={16} className="mr-1" /> นำเข้า CSV
                                         <input type="file" accept=".csv,text/csv" className="hidden" onChange={handleImportCsv} />
                                     </label>
+                                    <button
+                                        type="button"
+                                        onClick={handleDownloadCsvSample}
+                                        className="text-sm text-slate-600 hover:text-slate-900 font-medium px-2 py-1 flex items-center"
+                                    >
+                                        <Download size={16} className="mr-1" /> ตัวอย่าง CSV
+                                    </button>
                                 </div>
                                 <span className="text-xs text-slate-500">ระบบจะเขียนรายการท้ายเป็น {PROCESSING_FEE_LABEL} และ {FUEL_FEE_LABEL} อัตโนมัติเมื่อมีค่า</span>
                             </div>

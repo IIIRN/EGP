@@ -1,14 +1,15 @@
 "use client";
 
-import { use, useEffect, useState } from "react";
+import { use, useEffect, useState, ChangeEvent } from "react";
 import { useProject } from "@/context/ProjectContext";
-import { ArrowLeft, Save, Send, Plus, Loader2, FileEdit } from "lucide-react";
+import { ArrowLeft, Save, Send, Plus, Loader2, FileEdit, Upload, Download } from "lucide-react";
 import Link from "next/link";
 import { VOItem, VariationOrder } from "@/types/vo";
 import { useAuth } from "@/context/AuthContext";
 import { doc, getDoc, updateDoc, serverTimestamp, Timestamp } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { useRouter } from "next/navigation";
+import { parseDocumentItemsCsv, downloadDocumentItemsCsvTemplate } from "@/lib/documentItems";
 
 export default function EditVOPage({ params }: { params: Promise<{ id: string }> }) {
     const resolvedParams = use(params);
@@ -103,6 +104,55 @@ export default function EditVOPage({ params }: { params: Promise<{ id: string }>
 
     const removeItem = (id: string) => {
         setItems(items.filter(item => item.id !== id));
+    };
+
+    const handleImportCsv = (event: ChangeEvent<HTMLInputElement>) => {
+        const file = event.target.files?.[0];
+        if (!file) return;
+
+        const inputRef = event.target;
+        const reader = new FileReader();
+
+        reader.onload = () => {
+            try {
+                const content = String(reader.result || "");
+                const importedRows = parseDocumentItemsCsv(content);
+
+                if (importedRows.length === 0) {
+                    alert("ไม่พบข้อมูลรายการในไฟล์ CSV");
+                    return;
+                }
+
+                const mappedItems = importedRows.map((row, index) => ({
+                    id: `csv-${Date.now()}-${index}`,
+                    description: row.description,
+                    quantity: row.quantity || 1,
+                    unit: row.unit,
+                    unitPrice: row.unitPrice,
+                    amount: row.amount || (row.quantity || 1) * row.unitPrice,
+                    type: "add" as const,
+                }));
+
+                setItems(mappedItems);
+                alert(`นำเข้า CSV สำเร็จ ${mappedItems.length} รายการ`);
+            } catch (error) {
+                console.error("CSV import error:", error);
+                alert("ไม่สามารถอ่านไฟล์ CSV ได้ กรุณาตรวจสอบรูปแบบไฟล์");
+            } finally {
+                inputRef.value = "";
+            }
+        };
+
+        reader.onerror = () => {
+            alert("เกิดข้อผิดพลาดระหว่างอ่านไฟล์ CSV");
+            inputRef.value = "";
+        };
+
+        reader.readAsText(file, "utf-8");
+    };
+
+    const handleDownloadCsvSample = () => {
+        downloadDocumentItemsCsvTemplate("vo-items-sample.csv");
     };
 
     // Calculate VO Totals
@@ -449,12 +499,24 @@ export default function EditVOPage({ params }: { params: Promise<{ id: string }>
                                     ))}
                                 </tbody>
                             </table>
-                            <div className="bg-slate-50 p-3 border-t border-slate-200 flex space-x-4">
+                            <div className="bg-slate-50 p-3 border-t border-slate-200 flex flex-col gap-2 sm:flex-row sm:items-center">
                                 <button
+                                    type="button"
                                     onClick={handleAddItem}
                                     className="text-sm text-blue-600 hover:text-blue-800 font-medium px-2 py-1 flex items-center"
                                 >
                                     <Plus size={16} className="mr-1" /> เพิ่มรายการใหม่
+                                </button>
+                                <label className="text-sm text-blue-600 hover:text-blue-800 font-medium px-2 py-1 flex items-center cursor-pointer">
+                                    <Upload size={16} className="mr-1" /> นำเข้า CSV
+                                    <input type="file" accept=".csv,text/csv" className="hidden" onChange={handleImportCsv} />
+                                </label>
+                                <button
+                                    type="button"
+                                    onClick={handleDownloadCsvSample}
+                                    className="text-sm text-slate-600 hover:text-slate-900 font-medium px-2 py-1 flex items-center"
+                                >
+                                    <Download size={16} className="mr-1" /> ตัวอย่าง CSV
                                 </button>
                             </div>
                         </div>

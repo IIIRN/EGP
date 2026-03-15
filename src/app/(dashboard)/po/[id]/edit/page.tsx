@@ -2,7 +2,7 @@
 
 import { use, useEffect, useState } from "react";
 import { useProject } from "@/context/ProjectContext";
-import { ArrowLeft, Save, Send, Plus, Loader2, Upload, Search, ChevronDown } from "lucide-react";
+import { ArrowLeft, Save, Send, Plus, Loader2, Upload, Search, ChevronDown, Download } from "lucide-react";
 import Link from "next/link";
 import { POItem, PurchaseOrder } from "@/types/po";
 import { useAuth } from "@/context/AuthContext";
@@ -10,7 +10,7 @@ import { doc, getDoc, updateDoc, serverTimestamp, query, collection, where, getD
 import { db } from "@/lib/firebase";
 import { useRouter } from "next/navigation";
 import { Vendor } from "@/types/vendor";
-import { parseDocumentItemsCsv, PROCESSING_FEE_LABEL, splitProcessingFeeItem } from "@/lib/documentItems";
+import { parseDocumentItemsCsv, PROCESSING_FEE_LABEL, splitProcessingFeeItem, downloadDocumentItemsCsvTemplate } from "@/lib/documentItems";
 
 type SignatureOption = {
     id: string;
@@ -213,6 +213,10 @@ export default function EditPOPage({ params }: { params: Promise<{ id: string }>
         };
 
         reader.readAsText(file, "utf-8");
+    };
+
+    const handleDownloadCsvSample = () => {
+        downloadDocumentItemsCsvTemplate("po-items-sample.csv");
     };
 
     const normalizedProcessingFee = po?.poType === 'extra' ? 0 : Math.max(0, Number(processingFee) || 0);
@@ -485,7 +489,6 @@ export default function EditPOPage({ params }: { params: Promise<{ id: string }>
                                     />
                                     <span className="font-semibold text-blue-700">ปิดราคาทุกรายการ</span>
                                 </label>
-                                <p className="text-xs text-slate-500 hidden md:block">รองรับ CSV: description, quantity, unit, unitPrice</p>
                             </div>
                         </div>
 
@@ -575,6 +578,13 @@ export default function EditPOPage({ params }: { params: Promise<{ id: string }>
                                         <Upload size={16} className="mr-1" /> นำเข้า CSV
                                         <input type="file" accept=".csv,text/csv" className="hidden" onChange={handleImportCsv} />
                                     </label>
+                                    <button
+                                        type="button"
+                                        onClick={handleDownloadCsvSample}
+                                        className="text-sm text-slate-600 hover:text-slate-900 font-medium px-2 py-1 flex items-center"
+                                    >
+                                        <Download size={16} className="mr-1" /> ตัวอย่าง CSV
+                                    </button>
                                 </div>
                                 
                             </div>

@@ -1,17 +1,23 @@
 ﻿"use client";
 
 import { useProject } from "@/context/ProjectContext";
-import { ArrowLeft, Save, FileText, Send, Plus, Loader2, Search, ChevronDown, Upload } from "lucide-react";
+import { ArrowLeft, Save, FileText, Send, Plus, Loader2, Search, ChevronDown, Upload, Download } from "lucide-react";
 import Link from "next/link";
 import { useState, useEffect, ChangeEvent } from "react";
 import { POItem } from "@/types/po";
 import { useAuth } from "@/context/AuthContext";
-import { collection, addDoc, serverTimestamp, query, where, getDocs, doc, getDoc, orderBy, limit } from "firebase/firestore";
+import { collection, addDoc, serverTimestamp, query, where, getDocs, doc, getDoc, orderBy, limit, updateDoc } from "firebase/firestore";
 import { db } from "@/lib/firebase";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { Vendor } from "@/types/vendor";
-import { parseDocumentItemsCsv } from "@/lib/documentItems";
+import type { PurchaseRequisition } from "@/types/pr";
+import type { PriceComparison } from "@/types/priceComparison";
+import { parseDocumentItemsCsv, downloadDocumentItemsCsvTemplate } from "@/lib/documentItems";
 import { buildDocumentNumber, buildDocumentPrefix, normalizeProjectCode, parseDocumentSequence } from "@/lib/documentNumbers";
+import {
+    appendLinkedDocumentId,
+    getPurchaseRequisitionConvertedStatus,
+} from "@/lib/purchaseRequisition";
 
 type SignatureOption = {
     id: string;
@@ -31,6 +37,7 @@ export default function CreatePOPage() {
     const { currentProject } = useProject();
     const { user, userProfile } = useAuth();
     const router = useRouter();
+    const searchParams = useSearchParams();
 
     const createEmptyItem = (id: string): Partial<POItem> => ({
         id,
@@ -56,6 +63,13 @@ export default function CreatePOPage() {
     const [companySettings, setCompanySettings] = useState<CompanySettings | null>(null);
     const [availableUnits, setAvailableUnits] = useState<string[]>([]);
     const [selectedSignatureId, setSelectedSignatureId] = useState("");
+    const [sourceRequisition, setSourceRequisition] = useState<PurchaseRequisition | null>(null);
+    const [sourceComparison, setSourceComparison] = useState<PriceComparison | null>(null);
+    const [sourceLoading, setSourceLoading] = useState(false);
+    const [sourcePrefilled, setSourcePrefilled] = useState(false);
+
+    const sourcePrId = searchParams.get("prId") || "";
+    const sourceComparisonId = searchParams.get("comparisonId") || "";
 
     useEffect(() => {
         async function fetchNextPoNumber() {
@@ -113,6 +127,54 @@ export default function CreatePOPage() {
 
         fetchNextPoNumber();
     }, [poType, currentProject?.code]);
+
+    useEffect(() => {
+        setSourcePrefilled(false);
+        if (!sourcePrId && !sourceComparisonId) {
+            setSourceComparison(null);
+            setSourceRequisition(null);
+            setSourceLoading(false);
+            return;
+        }
+
+        let active = true;
+        async function fetchSourceDocuments() {
+            setSourceLoading(true);
+            try {
+                let nextComparison: PriceComparison | null = null;
+                if (sourceComparisonId) {
+                    const comparisonSnap = await getDoc(doc(db, "pr_price_comparisons", sourceComparisonId));
+                    if (comparisonSnap.exists()) {
+                        nextComparison = { id: comparisonSnap.id, ...comparisonSnap.data() } as PriceComparison;
+                    }
+                }
+
+                const resolvedPrId = sourcePrId || nextComparison?.prId || "";
+                let nextRequisition: PurchaseRequisition | null = null;
+                if (resolvedPrId) {
+                    const requisitionSnap = await getDoc(doc(db, "purchase_requisitions", resolvedPrId));
+                    if (requisitionSnap.exists()) {
+                        nextRequisition = { id: requisitionSnap.id, ...requisitionSnap.data() } as PurchaseRequisition;
+                    }
+                }
+
+                if (!active) return;
+                setSourceComparison(nextComparison);
+                setSourceRequisition(nextRequisition);
+            } catch (error) {
+                console.error("Error loading PO conversion source:", error);
+            } finally {
+                if (active) {
+                    setSourceLoading(false);
+                }
+            }
+        }
+
+        void fetchSourceDocuments();
+        return () => {
+            active = false;
+        };
+    }, [sourcePrId, sourceComparisonId]);
 
     // Vendor Search State
     const [searchVendor, setSearchVendor] = useState("");
@@ -175,6 +237,46 @@ export default function CreatePOPage() {
         fetchVendors();
         fetchCompanySettings();
     }, []);
+
+    useEffect(() => {
+        if (!sourceRequisition || sourcePrefilled) return;
+
+        const selectedQuote = sourceComparison
+            ? sourceComparison.quotes.find((quote) => quote.id === sourceComparison.recommendedQuoteId) ||
+            sourceComparison.quotes.find((quote) => quote.id === sourceComparison.autoRecommendedQuoteId) ||
+            null
+            : null;
+
+        if (selectedQuote) {
+            setItems(selectedQuote.items.map((item, index) => ({
+                id: item.requisitionItemId || item.id || `source-item-${index + 1}`,
+                description: item.description,
+                quantity: Number(item.quantity) || 0,
+                unit: item.unit || "",
+                unitPrice: Number(item.unitPrice) || 0,
+                amount: Number(item.amount) || 0,
+                isClosed: false,
+            })));
+            setVatMode(selectedQuote.vatMode || sourceRequisition.vatMode || "exclusive");
+            setCreditDays(Number(selectedQuote.creditDays) || 30);
+            if (selectedQuote.supplierType === "vendor" && selectedQuote.supplierId) {
+                setVendorId(selectedQuote.supplierId);
+            }
+        } else {
+            setItems(sourceRequisition.items.map((item, index) => ({
+                id: item.id || `source-item-${index + 1}`,
+                description: item.description,
+                quantity: Number(item.quantity) || 0,
+                unit: item.unit || "",
+                unitPrice: Number(item.unitPrice) || 0,
+                amount: Number(item.amount) || 0,
+                isClosed: false,
+            })));
+            setVatMode(sourceRequisition.vatMode || "exclusive");
+        }
+
+        setSourcePrefilled(true);
+    }, [sourceComparison, sourcePrefilled, sourceRequisition]);
 
     const handleAddItem = () => {
         setItems([...items, createEmptyItem(Date.now().toString())]);
@@ -245,6 +347,10 @@ export default function CreatePOPage() {
         reader.readAsText(file, "utf-8");
     };
 
+    const handleDownloadCsvSample = () => {
+        downloadDocumentItemsCsvTemplate("po-items-sample.csv");
+    };
+
     const itemsTotal = items.reduce((sum, item) => sum + (item.amount || 0), 0);
     const vatRate = vatMode === "none" ? 0 : DEFAULT_VAT_RATE;
     const vatAmount = vatMode === "exclusive"
@@ -276,6 +382,16 @@ export default function CreatePOPage() {
             return;
         }
 
+        if (sourceRequisition && sourceRequisition.fulfillmentType !== "po") {
+            alert("PR ต้นทางนี้ต้องออกเป็น WC ไม่ใช่ PO");
+            return;
+        }
+
+        if (sourceComparison && sourceComparison.status !== "approved") {
+            alert("ต้องอนุมัติผลเทียบราคาก่อนจึงจะออก PO ได้");
+            return;
+        }
+
         setSaving(true);
 
         try {
@@ -301,6 +417,8 @@ export default function CreatePOPage() {
                 poNumber: poNumber.trim(),
                 poType: poType,
                 projectId: currentProject.id,
+                ...(sourceRequisition?.id ? { sourcePrId: sourceRequisition.id } : {}),
+                ...(sourceComparison?.id ? { sourceComparisonId: sourceComparison.id } : {}),
                 vendorId: vendorId || "unknown",
                 vendorName: selectedVendor ? selectedVendor.name : "ไม่ระบุผู้ขาย",
                 items: sanitizedItems,
@@ -319,6 +437,22 @@ export default function CreatePOPage() {
             };
 
             const docRef = await addDoc(collection(db, "purchase_orders"), newPO);
+
+            if (sourceRequisition) {
+                const nextLinkedPoIds = appendLinkedDocumentId(sourceRequisition.linkedPoIds, docRef.id);
+                await updateDoc(doc(db, "purchase_requisitions", sourceRequisition.id), {
+                    linkedPoIds: nextLinkedPoIds,
+                    currentComparisonId: sourceComparison?.id || sourceRequisition.currentComparisonId || "",
+                    selectedComparisonId: sourceComparison?.id || sourceRequisition.selectedComparisonId || "",
+                    status: getPurchaseRequisitionConvertedStatus({
+                        fulfillmentType: sourceRequisition.fulfillmentType,
+                        linkedPoIds: nextLinkedPoIds,
+                        linkedWcIds: sourceRequisition.linkedWcIds,
+                        fallbackStatus: sourceRequisition.status,
+                    }),
+                    updatedAt: serverTimestamp(),
+                });
+            }
 
             if (status === "pending") {
                 try {
@@ -339,7 +473,7 @@ export default function CreatePOPage() {
 
             setSuccess(true);
             setTimeout(() => {
-                router.push("/po");
+                router.push(sourceRequisition ? `/po/${docRef.id}` : "/po");
             }, 2000);
 
         } catch (error) {
@@ -362,8 +496,28 @@ export default function CreatePOPage() {
         );
     }
 
+    if (sourceLoading) {
+        return (
+            <div className="flex flex-col items-center justify-center p-12">
+                <Loader2 className="animate-spin w-8 h-8 text-blue-600 mb-4" />
+                <p className="text-slate-500">กำลังโหลดข้อมูลต้นทางสำหรับออก PO...</p>
+            </div>
+        );
+    }
+
     return (
         <div className="max-w-5xl mx-auto space-y-6">
+
+            {sourceRequisition && (
+                <div className="rounded-xl border border-blue-200 bg-blue-50 p-4 text-sm text-blue-900">
+                    <p className="font-semibold">สร้าง PO จากเอกสารอนุมัติ</p>
+                    <p className="mt-1">
+                        PR: {sourceRequisition.prNumber}
+                        {sourceComparison ? ` • PC: ${sourceComparison.comparisonNumber}` : ""}
+                    </p>
+                    <p className="mt-1">{sourceRequisition.title}</p>
+                </div>
+            )}
 
             <div className="flex items-center justify-between">
                 <div className="flex items-center space-x-4">
@@ -564,7 +718,6 @@ export default function CreatePOPage() {
                                     />
                                     <span className="font-semibold text-blue-700">ปิดราคาทุกรายการ</span>
                                 </label>
-                                <p className="text-xs text-slate-500 hidden md:block">รองรับ CSV: description, quantity, unit, unitPrice</p>
                             </div>
                         </div>
 
@@ -652,6 +805,13 @@ export default function CreatePOPage() {
                                         <Upload size={16} className="mr-1" /> นำเข้า CSV
                                         <input type="file" accept=".csv,text/csv" className="hidden" onChange={handleImportCsv} />
                                     </label>
+                                    <button
+                                        type="button"
+                                        onClick={handleDownloadCsvSample}
+                                        className="text-sm text-slate-600 hover:text-slate-900 font-medium px-2 py-1 flex items-center"
+                                    >
+                                        <Download size={16} className="mr-1" /> ตัวอย่าง CSV
+                                    </button>
                                 </div>
                                 
                             </div>
