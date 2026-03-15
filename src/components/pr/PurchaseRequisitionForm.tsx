@@ -320,11 +320,12 @@ export default function PurchaseRequisitionForm({
         setSaving(true);
 
         const createdBy = requisition?.createdBy || userProfile?.uid || user.uid;
+        const requestedByUid = requisition?.requestedByUid || userProfile?.uid || user.uid;
         const requestedByName =
+            requisition?.requestedByName ||
             userProfile?.displayName ||
             userProfile?.email ||
             user.email ||
-            requisition?.requestedByName ||
             "ไม่ระบุ";
 
         try {
@@ -345,6 +346,7 @@ export default function PurchaseRequisitionForm({
                 totalAmount,
                 status: targetStatus,
                 createdBy,
+                requestedByUid,
                 requestedByName,
                 approvalTrail:
                     targetStatus === "pending_need_approval"
@@ -367,17 +369,37 @@ export default function PurchaseRequisitionForm({
 
             if (targetStatus === "pending_need_approval") {
                 try {
-                    await fetch("/api/line/notify", {
+                    const notificationPayload = {
+                        ...payload,
+                        id: savedId,
+                        updatedAt: undefined,
+                    };
+
+                    const response = await fetch("/api/line/notify", {
                         method: "POST",
                         headers: { "Content-Type": "application/json" },
                         body: JSON.stringify({
                             type: "PR",
-                            data: { ...payload, id: savedId },
+                            data: notificationPayload,
                             projectName: currentProject.name,
                         }),
                     });
+
+                    let responseBody: { success?: boolean; message?: string } | null = null;
+                    try {
+                        responseBody = await response.json();
+                    } catch {
+                        responseBody = null;
+                    }
+
+                    if (!response.ok || responseBody?.success === false) {
+                        const errorMessage = responseBody?.message || "ไม่สามารถส่งแจ้งเตือน LINE ได้";
+                        console.error("PR LINE notification failed:", errorMessage, responseBody);
+                        alert(`สร้าง PR สำเร็จ แต่ส่งแจ้งเตือนอนุมัติไม่สำเร็จ: ${errorMessage}`);
+                    }
                 } catch (error) {
                     console.error("PR LINE notification failed:", error);
+                    alert("สร้าง PR สำเร็จ แต่เกิดข้อผิดพลาดระหว่างส่งแจ้งเตือนอนุมัติ");
                 }
             }
 

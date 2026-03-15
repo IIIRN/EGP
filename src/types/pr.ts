@@ -56,6 +56,7 @@ export interface PurchaseRequisition {
     totalAmount: number;
     status: PurchaseRequisitionStatus;
     createdBy: string;
+    requestedByUid?: string;
     requestedByName?: string;
     currentComparisonId?: string;
     selectedComparisonId?: string;

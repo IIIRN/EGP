@@ -22,6 +22,8 @@ export interface WorkContract {
     projectId: string;
     sourcePrId?: string;
     sourceComparisonId?: string;
+    requestedByUid?: string;
+    requestedByName?: string;
     vendorId?: string;
     vendorName?: string;
     title?: string;

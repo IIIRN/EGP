@@ -1,4 +1,4 @@
-export type SupportedDocumentKind = "PO" | "VO" | "WC" | "PR" | "PC";
+﻿export type SupportedDocumentKind = "PO" | "VO" | "WC" | "PR" | "PC";
 
 export const DOC_KIND_COLLECTION: Record<SupportedDocumentKind, string> = {
     PO: "purchase_orders",

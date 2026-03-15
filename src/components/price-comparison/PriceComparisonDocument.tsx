@@ -461,39 +461,39 @@ export function QuoteItemsTable({
     renderCompliance,
 }: QuoteItemsTableProps) {
     return (
-        <div className="overflow-hidden border border-slate-300">
+        <div className="overflow-hidden rounded-lg border border-slate-300">
             <div className="overflow-x-auto">
-                <table className="min-w-full divide-y divide-slate-200">
+                <table className="min-w-[920px] w-full divide-y divide-slate-200">
                     <thead className="bg-slate-100">
                         <tr className="text-left text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-600">
-                            <th className="px-4 py-3">รายการ</th>
-                            <th className="px-4 py-3 text-right">จำนวน</th>
-                            <th className="px-4 py-3 text-right">ราคาต่อหน่วย</th>
-                            <th className="px-4 py-3 text-right">รวม</th>
-                            <th className="px-4 py-3">หมายเหตุ</th>
-                            <th className="px-4 py-3 text-center">Spec</th>
+                            <th className="min-w-[18rem] px-3 py-2.5">รายการ</th>
+                            <th className="w-20 px-3 py-2.5 text-right">จำนวน</th>
+                            <th className="w-36 px-3 py-2.5 text-right">ราคาต่อหน่วย</th>
+                            <th className="w-32 px-3 py-2.5 text-right">รวม</th>
+                            <th className="min-w-[12rem] px-3 py-2.5">หมายเหตุ</th>
+                            <th className="w-32 px-3 py-2.5 text-center">Spec</th>
                         </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100 bg-white">
                         {items.map((item) => (
                             <tr key={item.id} className="align-top">
-                                <td className="px-4 py-3">
+                                <td className="px-3 py-2.5">
                                     <p className="text-sm font-medium text-slate-900">{item.description}</p>
                                     <p className="mt-1 text-xs text-slate-500">
                                         อ้างอิง {item.quantity} {item.unit}
                                     </p>
                                 </td>
-                                <td className="px-4 py-3 text-right text-sm text-slate-700">{item.quantity}</td>
-                                <td className="px-4 py-3 text-right text-sm text-slate-700">
+                                <td className="whitespace-nowrap px-3 py-2.5 text-right text-sm text-slate-700">{item.quantity}</td>
+                                <td className="whitespace-nowrap px-3 py-2.5 text-right text-sm text-slate-700">
                                     {editable && renderUnitPrice ? renderUnitPrice(item) : formatMoney(Number(item.unitPrice || 0))}
                                 </td>
-                                <td className="px-4 py-3 text-right text-sm font-semibold text-slate-950">
+                                <td className="whitespace-nowrap px-3 py-2.5 text-right text-sm font-semibold text-slate-950">
                                     {formatMoney(Number(item.amount || 0))}
                                 </td>
-                                <td className="px-4 py-3 text-sm text-slate-600">
+                                <td className="px-3 py-2.5 text-sm text-slate-600">
                                     {editable && renderRemark ? renderRemark(item) : (item.remark || "-")}
                                 </td>
-                                <td className="px-4 py-3 text-center text-sm">
+                                <td className="px-3 py-2.5 text-center text-sm">
                                     {editable && renderCompliance
                                         ? renderCompliance(item)
                                         : (
@@ -514,22 +514,22 @@ export function QuoteItemsTable({
 
 export function QuoteTotalsGrid({ quote }: { quote: ComparisonSupplierQuote }) {
     return (
-        <div className="grid gap-3 md:grid-cols-4">
-            <div className="border border-slate-300 bg-white px-4 py-3">
+        <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4 xl:w-fit">
+            <div className="min-w-[7rem] rounded-lg border border-slate-300 bg-white px-4 py-3">
                 <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">Subtotal</p>
-                <p className="mt-2 text-base font-semibold text-slate-950">{formatMoney(Number(quote.subTotal || 0))}</p>
+                <p className="mt-1.5 whitespace-nowrap text-base font-semibold text-slate-950">{formatMoney(Number(quote.subTotal || 0))}</p>
             </div>
-            <div className="border border-slate-300 bg-white px-4 py-3">
+            <div className="min-w-[7rem] rounded-lg border border-slate-300 bg-white px-4 py-3">
                 <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">VAT</p>
-                <p className="mt-2 text-base font-semibold text-slate-950">{formatMoney(Number(quote.vatAmount || 0))}</p>
+                <p className="mt-1.5 whitespace-nowrap text-base font-semibold text-slate-950">{formatMoney(Number(quote.vatAmount || 0))}</p>
             </div>
-            <div className="border border-slate-300 bg-white px-4 py-3">
+            <div className="min-w-[7rem] rounded-lg border border-slate-300 bg-white px-4 py-3">
                 <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">Compliance</p>
-                <p className="mt-2 text-base font-semibold text-slate-950">{getComplianceLabel(quote.items)}</p>
+                <p className="mt-1.5 text-base font-semibold text-slate-950">{getComplianceLabel(quote.items)}</p>
             </div>
-            <div className="border border-slate-950 bg-slate-50 px-4 py-3">
+            <div className="min-w-[7rem] rounded-lg border border-slate-950 bg-slate-50 px-4 py-3">
                 <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">Total</p>
-                <p className="mt-2 text-base font-semibold text-slate-950">{formatMoney(Number(quote.totalAmount || 0))}</p>
+                <p className="mt-1.5 whitespace-nowrap text-base font-semibold text-slate-950">{formatMoney(Number(quote.totalAmount || 0))}</p>
             </div>
         </div>
     );
