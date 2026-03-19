@@ -1,4 +1,4 @@
-﻿import { NextResponse } from "next/server";
+import { NextResponse } from "next/server";
 import { adminDb } from "@/lib/firebaseAdmin";
 import {
     getDocumentNumber,
@@ -31,6 +31,7 @@ type FooterAction = {
     uri: string;
     style?: "primary" | "secondary";
     color?: string;
+    inline?: boolean;
 };
 
 const COLOR = {
@@ -40,6 +41,7 @@ const COLOR = {
     border: "#e2e8f0",
     surface: "#f8fafc",
     primary: "#1d4ed8",
+    success: "#16a34a",
 };
 
 function asText(value: unknown, fallback = "-"): string {
@@ -213,6 +215,7 @@ function buildVendorFooterActions(vendorData?: NotifyRecord): FooterAction[] {
             label: "โทรหลัก",
             uri: primaryPhoneUri,
             style: "secondary",
+            inline: true,
         });
     }
 
@@ -221,6 +224,7 @@ function buildVendorFooterActions(vendorData?: NotifyRecord): FooterAction[] {
             label: "โทรสำรอง",
             uri: secondaryPhoneUri,
             style: "secondary",
+            inline: true,
         });
     }
 
@@ -235,8 +239,47 @@ function buildVendorFooterActions(vendorData?: NotifyRecord): FooterAction[] {
     return actions;
 }
 
-function buildDocumentFooter(actionUrl: string, hasActionButton: boolean, actionLabel: string, extraActions: FooterAction[] = []) {
+function buildFooterButton(item: FooterAction, options?: { flex?: number }) {
+    return {
+        type: "button",
+        style: item.style || "secondary",
+        ...(item.color ? { color: item.color } : {}),
+        ...(options?.flex ? { flex: options.flex } : {}),
+        height: "sm",
+        action: { type: "uri", label: item.label, uri: item.uri },
+    };
+}
+
+function buildDocumentFooter(
+    actionUrl: string,
+    hasActionButton: boolean,
+    actionLabel: string,
+    actionColor = COLOR.primary,
+    extraActions: FooterAction[] = []
+) {
     if (!hasActionButton && extraActions.length === 0) return undefined;
+
+    const extraActionContents: Array<Record<string, unknown>> = [];
+    for (let index = 0; index < extraActions.length; index += 1) {
+        const currentAction = extraActions[index];
+        const nextAction = extraActions[index + 1];
+
+        if (currentAction.inline && nextAction?.inline) {
+            extraActionContents.push({
+                type: "box",
+                layout: "horizontal",
+                spacing: "sm",
+                contents: [
+                    buildFooterButton(currentAction, { flex: 1 }),
+                    buildFooterButton(nextAction, { flex: 1 }),
+                ],
+            });
+            index += 1;
+            continue;
+        }
+
+        extraActionContents.push(buildFooterButton(currentAction));
+    }
 
     return {
         type: "box",
@@ -246,17 +289,11 @@ function buildDocumentFooter(actionUrl: string, hasActionButton: boolean, action
             ...(hasActionButton ? [{
                 type: "button",
                 style: "primary",
-                color: COLOR.primary,
+                color: actionColor,
                 height: "sm",
                 action: { type: "uri", label: actionLabel, uri: actionUrl },
             }] : []),
-            ...extraActions.map((item) => ({
-                type: "button",
-                style: item.style || "secondary",
-                ...(item.color ? { color: item.color } : {}),
-                height: "sm",
-                action: { type: "uri", label: item.label, uri: item.uri },
-            })),
+            ...extraActionContents,
         ],
     };
 }
@@ -265,22 +302,26 @@ function buildDocumentFlexBubble(params: {
     projectName?: string;
     docTypeLabel: string;
     statusText: string;
+    statusColor?: string;
     documentNumber: string;
     detailRows: ReturnType<typeof infoRow>[];
     actionUrl: string;
     hasActionButton: boolean;
     actionLabel: string;
+    actionColor?: string;
     extraActions?: FooterAction[];
 }) {
     const {
         projectName,
         docTypeLabel,
         statusText,
+        statusColor = COLOR.title,
         documentNumber,
         detailRows,
         actionUrl,
         hasActionButton,
         actionLabel,
+        actionColor = COLOR.primary,
         extraActions = [],
     } = params;
 
@@ -307,14 +348,20 @@ function buildDocumentFlexBubble(params: {
                     spacing: "sm",
                     contents: [
                         infoRow("ประเภทเอกสาร", docTypeLabel),
-                        infoRow("สถานะ", statusText, { valueColor: COLOR.title, valueWeight: "bold" }),
+                        infoRow("สถานะ", statusText, { valueColor: statusColor, valueWeight: "bold" }),
                         infoRow("เลขที่เอกสาร", documentNumber),
                         ...detailRows,
                     ],
                 },
             ],
         },
-        footer: buildDocumentFooter(actionUrl, hasActionButton, actionLabel, extraActions),
+        footer: buildDocumentFooter(
+            actionUrl,
+            hasActionButton,
+            actionLabel,
+            actionColor,
+            extraActions
+        ),
         styles: {
             body: { backgroundColor: "#ffffff" },
             footer: { backgroundColor: COLOR.surface, separator: true },
@@ -337,6 +384,7 @@ function buildPOFlex(params: {
         projectName,
         docTypeLabel: "ใบสั่งซื้อ (PO)",
         statusText: isPending ? "รออนุมัติ" : "อนุมัติแล้ว",
+        statusColor: isPending ? COLOR.title : COLOR.success,
         documentNumber: asText(data?.poNumber),
         detailRows: [
             infoRow("คู่ค้า", asText(vendorData?.name || data?.vendorName)),
@@ -347,6 +395,7 @@ function buildPOFlex(params: {
         actionUrl: approveUrl,
         hasActionButton: hasApproveButton,
         actionLabel,
+        actionColor: isPending ? COLOR.primary : COLOR.success,
         extraActions: buildVendorFooterActions(vendorData),
     });
 }
@@ -366,6 +415,7 @@ function buildVOFlex(params: {
         projectName,
         docTypeLabel: "งานเพิ่ม-ลด (VO)",
         statusText: isPending ? "รออนุมัติ" : "อนุมัติแล้ว",
+        statusColor: isPending ? COLOR.title : COLOR.success,
         documentNumber: asText(data?.voNumber),
         detailRows: [
             infoRow("หัวข้อ", asText(data?.title)),
@@ -378,6 +428,7 @@ function buildVOFlex(params: {
         actionUrl: approveUrl,
         hasActionButton: hasApproveButton,
         actionLabel,
+        actionColor: isPending ? COLOR.primary : COLOR.success,
     });
 }
 
@@ -396,6 +447,7 @@ function buildWCFlex(params: {
         projectName,
         docTypeLabel: "ใบจ้างงาน (WC)",
         statusText: isPending ? "รออนุมัติ" : "อนุมัติแล้ว",
+        statusColor: isPending ? COLOR.title : COLOR.success,
         documentNumber: asText(data?.wcNumber),
         detailRows: [
             infoRow("ผู้รับจ้าง", asText(vendorData?.name || data?.vendorName)),
@@ -406,6 +458,7 @@ function buildWCFlex(params: {
         actionUrl: approveUrl,
         hasActionButton: hasApproveButton,
         actionLabel,
+        actionColor: isPending ? COLOR.primary : COLOR.success,
         extraActions: buildVendorFooterActions(vendorData),
     });
 }
@@ -424,6 +477,7 @@ function buildPRFlex(params: {
         projectName,
         docTypeLabel: "ใบขอซื้อ/ขอจ้าง (PR)",
         statusText: isPending ? "รออนุมัติ" : "อนุมัติให้จัดหาแล้ว",
+        statusColor: isPending ? COLOR.title : COLOR.success,
         documentNumber: asText(data?.prNumber),
         detailRows: [
             infoRow("หัวข้อ", asText(data?.title)),
@@ -434,6 +488,7 @@ function buildPRFlex(params: {
         actionUrl: approveUrl,
         hasActionButton: hasApproveButton,
         actionLabel,
+        actionColor: isPending ? COLOR.primary : COLOR.success,
     });
 }
 
@@ -451,6 +506,7 @@ function buildPCFlex(params: {
         projectName,
         docTypeLabel: "เอกสารเทียบราคา (PC)",
         statusText: isPending ? "รออนุมัติผลเทียบราคา" : "อนุมัติผลเทียบราคาแล้ว",
+        statusColor: isPending ? COLOR.title : COLOR.success,
         documentNumber: asText(data?.comparisonNumber),
         detailRows: [
             infoRow("PR ต้นทาง", asText(data?.prNumber)),
@@ -461,6 +517,7 @@ function buildPCFlex(params: {
         actionUrl: approveUrl,
         hasActionButton: hasApproveButton,
         actionLabel,
+        actionColor: isPending ? COLOR.primary : COLOR.success,
     });
 }
 
@@ -563,6 +620,15 @@ export async function POST(request: Request) {
             pushTarget(settings.userId, "legacyUserId");
         }
 
+        let resolvedProjectName = asText(projectName, "");
+        const sourceProjectId = asText(data?.projectId, "");
+        if (!resolvedProjectName && sourceProjectId) {
+            const projectSnapshot = await adminDb.collection("projects").doc(sourceProjectId).get();
+            if (projectSnapshot.exists) {
+                resolvedProjectName = asText(projectSnapshot.data()?.name, "");
+            }
+        }
+
         let resolvedVendorData = vendorData;
         const sourceVendorId = asText(data?.vendorId, "");
         if ((type === "PO" || type === "WC") && sourceVendorId) {
@@ -649,7 +715,7 @@ export async function POST(request: Request) {
             altText = isPending ? `PO รออนุมัติ - ${poNo}` : `PO อนุมัติแล้ว - ${poNo}`;
             flexContents = buildPOFlex({
                 isPending,
-                projectName,
+                projectName: resolvedProjectName,
                 data,
                 vendorData: resolvedVendorData,
                 approveUrl: actionUrl,
@@ -661,7 +727,7 @@ export async function POST(request: Request) {
             altText = isPending ? `VO รออนุมัติ - ${voNo}` : `VO อนุมัติแล้ว - ${voNo}`;
             flexContents = buildVOFlex({
                 isPending,
-                projectName,
+                projectName: resolvedProjectName,
                 data,
                 approveUrl: actionUrl,
                 hasApproveButton: hasActionButton,
@@ -672,7 +738,7 @@ export async function POST(request: Request) {
             altText = isPending ? `WC รออนุมัติ - ${wcNo}` : `WC อนุมัติแล้ว - ${wcNo}`;
             flexContents = buildWCFlex({
                 isPending,
-                projectName,
+                projectName: resolvedProjectName,
                 data,
                 vendorData: resolvedVendorData,
                 approveUrl: actionUrl,
@@ -684,7 +750,7 @@ export async function POST(request: Request) {
             altText = isPending ? `PR รออนุมัติ - ${prNo}` : `PR อนุมัติให้จัดหา - ${prNo}`;
             flexContents = buildPRFlex({
                 isPending,
-                projectName,
+                projectName: resolvedProjectName,
                 data,
                 approveUrl: actionUrl,
                 hasApproveButton: hasActionButton,
@@ -695,7 +761,7 @@ export async function POST(request: Request) {
             altText = isPending ? `PC รออนุมัติ - ${comparisonNo}` : `PC อนุมัติแล้ว - ${comparisonNo}`;
             flexContents = buildPCFlex({
                 isPending,
-                projectName,
+                projectName: resolvedProjectName,
                 data,
                 approveUrl: actionUrl,
                 hasApproveButton: hasActionButton,
@@ -709,7 +775,7 @@ export async function POST(request: Request) {
                     type: "box",
                     layout: "vertical",
                     contents: [
-                        { type: "text", text: asText(projectName, "ไม่ระบุโครงการ"), size: "sm", color: COLOR.title, weight: "bold", wrap: true },
+                        { type: "text", text: asText(resolvedProjectName, "ไม่ระบุโครงการ"), size: "sm", color: COLOR.title, weight: "bold", wrap: true },
                         { type: "separator", color: COLOR.border, margin: "md" },
                         infoRow("ประเภทเอกสาร", normalizedKind ? getNotifyDocumentLabel(normalizedKind) : asText(type, "ไม่ระบุ")),
                         infoRow("สถานะ", asText(data?.status, "-"), { valueColor: COLOR.title, valueWeight: "bold" }),
@@ -771,7 +837,7 @@ export async function POST(request: Request) {
                     const fallbackRes = await sendPushMessage(targetId, [
                         {
                             type: "text",
-                            text: buildPlainTextMessage({ type, projectName, data, vendorData: resolvedVendorData }),
+                            text: buildPlainTextMessage({ type, projectName: resolvedProjectName, data, vendorData: resolvedVendorData }),
                         },
                     ]);
 
