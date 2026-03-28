@@ -63,7 +63,7 @@ export function VariationOrderDocument({
                                 <span className="text-orange-600 text-xs font-bold shrink-0">LOGO</span>
                             )}
                         </div>
-                        <div className="flex-1 text-center px-4 font-sans">
+                        <div className="flex-1 text-center px-4">
                             <h2 className="text-[20px] font-bold mb-1 leading-tight">{companySettings.name}</h2>
                             <p className="text-[11px] leading-relaxed font-semibold">{companySettings.address}</p>
                             <p className="text-[11px] leading-relaxed font-semibold">
@@ -104,7 +104,7 @@ export function VariationOrderDocument({
                         </div>
                     </div>
 
-                    <table className="w-full border-collapse border border-black text-[11px] font-medium font-sans mt-2">
+                    <table className="w-full border-collapse border border-black text-[11px] font-medium mt-2">
                         <thead>
                             <tr>
                                 <th className="border border-black py-1.5 px-1 text-center w-10 font-bold">ลำดับ</th>
