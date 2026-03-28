@@ -16,16 +16,20 @@ export default function EditProjectPage({ params }: { params: Promise<{ id: stri
     const [deleting, setDeleting] = useState(false);
 
     const [formData, setFormData] = useState({
-        name: "",
+        name: "",
         code: "",
         location: "",
         budget: "",
-        status: "planning"
+        contactName: "",
+        contactPhone: "",
+        contactEmail: "",
+        status: "planning",
     });
 
     useEffect(() => {
         async function fetchProject() {
             if (!resolvedParams.id) return;
+
             try {
                 const docRef = doc(db, "projects", resolvedParams.id);
                 const docSnap = await getDoc(docRef);
@@ -33,11 +37,14 @@ export default function EditProjectPage({ params }: { params: Promise<{ id: stri
                 if (docSnap.exists()) {
                     const data = docSnap.data();
                     setFormData({
-                        name: data.name || "",
+                        name: data.name || "",
                         code: data.code || "",
                         location: data.location || "",
                         budget: data.budget ? data.budget.toString() : "",
-                        status: data.status || "planning"
+                        contactName: data.contactName || "",
+                        contactPhone: data.contactPhone || "",
+                        contactEmail: data.contactEmail || "",
+                        status: data.status || "planning",
                     });
                 } else {
                     console.error("No such project document!");
@@ -50,18 +57,19 @@ export default function EditProjectPage({ params }: { params: Promise<{ id: stri
                 setLoading(false);
             }
         }
+
         fetchProject();
     }, [resolvedParams.id, router]);
 
     const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
         const { name, value } = e.target;
-        setFormData(prev => ({ ...prev, [name]: value }));
+        setFormData((prev) => ({ ...prev, [name]: value }));
     };
 
     const handleSave = async (e: React.FormEvent) => {
         e.preventDefault();
 
-        if (!formData.name || !formData.code) {
+        if (!formData.name.trim() || !formData.code.trim()) {
             alert("กรุณากรอกข้อมูลชื่อและรหัสโครงการให้ครบถ้วน");
             return;
         }
@@ -71,10 +79,13 @@ export default function EditProjectPage({ params }: { params: Promise<{ id: stri
         try {
             const projectRef = doc(db, "projects", resolvedParams.id);
             await updateDoc(projectRef, {
-                name: formData.name,
-                code: formData.code,
-                location: formData.location || "",
+                name: formData.name.trim(),
+                code: formData.code.trim(),
+                location: formData.location.trim(),
                 budget: formData.budget ? parseFloat(formData.budget) : 0,
+                contactName: formData.contactName.trim(),
+                contactPhone: formData.contactPhone.trim(),
+                contactEmail: formData.contactEmail.trim(),
                 status: formData.status,
                 updatedAt: new Date().toISOString(),
             });
@@ -88,11 +99,12 @@ export default function EditProjectPage({ params }: { params: Promise<{ id: stri
     };
 
     const handleDelete = async () => {
-        if (!confirm("⚠️ คุณแน่ใจหรือไม่ว่าต้องการลบข้อมูลโครงการนี้? \nข้อมูลทุกอย่าง (รวมถึง PO, VO) ที่เกี่ยวข้องกับโครงการนี้จะกลายเป็นกำพร้าทันที")) {
+        if (!confirm("คุณแน่ใจหรือไม่ว่าต้องการลบข้อมูลโครงการนี้?\nข้อมูลที่เกี่ยวข้องกับโครงการนี้อาจไม่สามารถอ้างอิงได้ต่อ")) {
             return;
         }
 
         setDeleting(true);
+
         try {
             const projectRef = doc(db, "projects", resolvedParams.id);
             await deleteDoc(projectRef);
@@ -115,7 +127,6 @@ export default function EditProjectPage({ params }: { params: Promise<{ id: stri
 
     return (
         <div className="max-w-3xl mx-auto space-y-6">
-
             <div className="flex items-center justify-between">
                 <div className="flex items-center space-x-4">
                     <Link href="/projects" className="p-2 text-slate-400 hover:bg-slate-100 hover:text-slate-600 rounded-full transition-colors">
@@ -141,14 +152,13 @@ export default function EditProjectPage({ params }: { params: Promise<{ id: stri
 
             <form onSubmit={handleSave} className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
                 <div className="p-6 md:p-8 space-y-6">
-
                     <div className="flex items-center space-x-3 mb-6">
                         <div className="w-12 h-12 bg-blue-100 text-blue-600 rounded-full flex items-center justify-center">
                             <Building2 size={24} />
                         </div>
                         <div>
                             <h3 className="text-lg font-semibold text-slate-800">ข้อมูลโครงการก่อสร้าง</h3>
-                            <p className="text-sm text-slate-500">แก้ไขรายละเอียดสำหรับโครงการนี้ร</p>
+                            <p className="text-sm text-slate-500">แก้ไขรายละเอียดสำหรับโครงการนี้</p>
                         </div>
                     </div>
 
@@ -193,13 +203,11 @@ export default function EditProjectPage({ params }: { params: Promise<{ id: stri
                                 <option value="completed">เสร็จสิ้น (Completed)</option>
                             </select>
                         </div>
-
                     </div>
 
                     <hr className="border-slate-100 my-6" />
 
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-
                         <div className="col-span-1 md:col-span-2">
                             <label className="block text-sm font-medium text-slate-700 mb-1">งบประมาณก่อสร้างรวม (Total Budget)</label>
                             <div className="relative rounded-md shadow-sm">
@@ -234,8 +242,48 @@ export default function EditProjectPage({ params }: { params: Promise<{ id: stri
                                 className="w-full border border-slate-300 rounded-lg py-2 px-3 text-sm focus:ring-blue-500 focus:border-blue-500 bg-white"
                             />
                         </div>
-                    </div>
 
+                        <div className="col-span-1 md:col-span-2 pt-2">
+                            <h4 className="text-sm font-semibold text-slate-800">ข้อมูลผู้ติดต่อโครงการ</h4>
+                            <p className="text-xs text-slate-500 mt-1">ระบุผู้ประสานงานหลักของโครงการสำหรับการติดต่อ</p>
+                        </div>
+
+                        <div>
+                            <label className="block text-sm font-medium text-slate-700 mb-1">ชื่อผู้ติดต่อ</label>
+                            <input
+                                type="text"
+                                name="contactName"
+                                value={formData.contactName}
+                                onChange={handleChange}
+                                placeholder="เช่น สมชาย ใจดี"
+                                className="w-full border border-slate-300 rounded-lg py-2 px-3 text-sm focus:ring-blue-500 focus:border-blue-500 bg-white"
+                            />
+                        </div>
+
+                        <div>
+                            <label className="block text-sm font-medium text-slate-700 mb-1">เบอร์โทรผู้ติดต่อ</label>
+                            <input
+                                type="tel"
+                                name="contactPhone"
+                                value={formData.contactPhone}
+                                onChange={handleChange}
+                                placeholder="เช่น 081-234-5678"
+                                className="w-full border border-slate-300 rounded-lg py-2 px-3 text-sm focus:ring-blue-500 focus:border-blue-500 bg-white"
+                            />
+                        </div>
+
+                        <div className="col-span-1 md:col-span-2">
+                            <label className="block text-sm font-medium text-slate-700 mb-1">อีเมลผู้ติดต่อ</label>
+                            <input
+                                type="email"
+                                name="contactEmail"
+                                value={formData.contactEmail}
+                                onChange={handleChange}
+                                placeholder="example@company.com"
+                                className="w-full border border-slate-300 rounded-lg py-2 px-3 text-sm focus:ring-blue-500 focus:border-blue-500 bg-white"
+                            />
+                        </div>
+                    </div>
                 </div>
 
                 <div className="bg-slate-50 px-6 py-4 border-t border-slate-200 flex justify-end space-x-3">
@@ -255,7 +303,6 @@ export default function EditProjectPage({ params }: { params: Promise<{ id: stri
                     </button>
                 </div>
             </form>
-
         </div>
     );
 }

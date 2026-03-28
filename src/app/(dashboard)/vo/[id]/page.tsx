@@ -3,29 +3,14 @@
 import { use, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { ArrowLeft, CheckCircle, XCircle, Printer, FileEdit, Loader2, Edit, Trash2 } from "lucide-react";
+import { ArrowLeft, CheckCircle, XCircle, Printer, FileEdit, Loader2, Edit, Trash2, Mail } from "lucide-react";
 import { doc, getDoc, updateDoc, deleteDoc, serverTimestamp } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { VariationOrder } from "@/types/vo";
 import { useAuth } from "@/context/AuthContext";
 import { useProject } from "@/context/ProjectContext";
-
-type SignatureOption = {
-    id?: string;
-    name?: string;
-    position?: string;
-    signatureUrl?: string;
-};
-
-type CompanySettings = {
-    name: string;
-    address: string;
-    phone: string;
-    email: string;
-    logoUrl?: string;
-    signatureUrl?: string;
-    signatures?: SignatureOption[];
-};
+import { Project } from "@/types/project";
+import { CompanySettings, SignatureOption, VariationOrderDocument } from "@/components/vo/VariationOrderDocument";
 
 function toSignedCurrency(value: number) {
     const sign = value > 0 ? "+" : "";
@@ -39,9 +24,16 @@ export default function VODetailPage({ params }: { params: Promise<{ id: string 
     const { currentProject } = useProject();
 
     const [vo, setVo] = useState<VariationOrder | null>(null);
+    const [voProject, setVoProject] = useState<Project | null>(null);
     const [loading, setLoading] = useState(true);
     const [actionLoading, setActionLoading] = useState(false);
     const [deleting, setDeleting] = useState(false);
+    const [emailSending, setEmailSending] = useState(false);
+    const [emailSentSuccess, setEmailSentSuccess] = useState(false);
+    const [emailModalOpen, setEmailModalOpen] = useState(false);
+    const [emailSubject, setEmailSubject] = useState("");
+    const [emailBody, setEmailBody] = useState("");
+    const [includeAttachment, setIncludeAttachment] = useState(true);
 
     const [companySettings, setCompanySettings] = useState<CompanySettings>({
         name: "บริษัท พาวเวอร์เทค เอนจิเนียริ่ง จำกัด",
@@ -72,7 +64,21 @@ export default function VODetailPage({ params }: { params: Promise<{ id: string 
                 const voSnap = await getDoc(voRef);
 
                 if (voSnap.exists()) {
-                    setVo({ id: voSnap.id, ...voSnap.data() } as VariationOrder);
+                    const voData = { id: voSnap.id, ...voSnap.data() } as VariationOrder;
+                    setVo(voData);
+
+                    if (voData.projectId) {
+                        const projectRef = doc(db, "projects", voData.projectId);
+                        const projectSnap = await getDoc(projectRef);
+
+                        if (projectSnap.exists()) {
+                            setVoProject({ id: projectSnap.id, ...projectSnap.data() } as Project);
+                        } else {
+                            setVoProject(null);
+                        }
+                    } else {
+                        setVoProject(null);
+                    }
                 } else {
                     console.error("No such document!");
                 }
@@ -97,7 +103,7 @@ export default function VODetailPage({ params }: { params: Promise<{ id: string 
                 updatedAt: serverTimestamp(),
             });
 
-            if (newStatus === "approved" && currentProject) {
+            if (newStatus === "approved") {
                 try {
                     await fetch("/api/line/notify", {
                         method: "POST",
@@ -105,7 +111,7 @@ export default function VODetailPage({ params }: { params: Promise<{ id: string 
                         body: JSON.stringify({
                             type: "VO",
                             data: { ...vo, status: newStatus },
-                            projectName: currentProject.name,
+                            projectName: resolvedProject?.name || currentProject?.name || "",
                         }),
                     });
                 } catch (e) {
@@ -120,6 +126,71 @@ export default function VODetailPage({ params }: { params: Promise<{ id: string 
         } finally {
             setActionLoading(false);
         }
+    };
+
+    const openEmailModal = () => {
+        if (!vo) return;
+        if (!projectContactEmail) {
+            alert("ไม่พบอีเมลผู้ติดต่อโครงการ");
+            return;
+        }
+
+        setEmailSubject(defaultEmailSubject);
+        setEmailBody(defaultEmailBody);
+        setIncludeAttachment(true);
+        setEmailSentSuccess(false);
+        setEmailModalOpen(true);
+    };
+
+    const handleSendEmail = () => {
+        if (!vo) return;
+        if (!projectContactEmail) {
+            alert("ไม่พบอีเมลผู้ติดต่อโครงการ");
+            return;
+        }
+
+        if (!emailSubject.trim()) {
+            alert("กรุณาระบุหัวข้ออีเมล");
+            return;
+        }
+
+        if (!emailBody.trim()) {
+            alert("กรุณาระบุเนื้อหาอีเมล");
+            return;
+        }
+
+        setEmailSending(true);
+
+        fetch("/api/vo/send-email", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+                voId: vo.id,
+                subject: emailSubject.trim(),
+                textBody: emailBody.trim(),
+                includeAttachment,
+            }),
+        })
+            .then(async (response) => {
+                const result = await response.json().catch(() => ({}));
+
+                if (!response.ok) {
+                    throw new Error(result?.error || "ส่งอีเมลไม่สำเร็จ");
+                }
+
+                setEmailModalOpen(false);
+                setEmailSentSuccess(true);
+                window.setTimeout(() => {
+                    setEmailSentSuccess(false);
+                }, 3000);
+            })
+            .catch((error: unknown) => {
+                const message = error instanceof Error ? error.message : "ส่งอีเมลไม่สำเร็จ";
+                alert(message);
+            })
+            .finally(() => {
+                setEmailSending(false);
+            });
     };
 
     const handleDelete = async () => {
@@ -167,6 +238,26 @@ export default function VODetailPage({ params }: { params: Promise<{ id: string 
     };
 
     const canApprove = userProfile?.role === "admin" || userProfile?.role === "pm";
+    const resolvedProject = currentProject?.id === vo?.projectId ? currentProject : voProject;
+    const projectContactName = resolvedProject?.contactName?.trim() || "ผู้ติดต่อโครงการ";
+    const projectContactEmail = resolvedProject?.contactEmail?.trim() || "";
+    const defaultEmailSubject = vo ? `แจ้งอนุมัติ VO ${vo.voNumber} - ${resolvedProject?.name || "โครงการ"}` : "";
+    const defaultEmailBody = vo
+        ? [
+            `เรียน ${projectContactName}`,
+            "",
+            "เอกสารใบสั่งเปลี่ยนแปลงงาน (VO) ได้รับการอนุมัติเรียบร้อยแล้ว",
+            `โครงการ: ${resolvedProject?.name || "-"}`,
+            `เลขที่เอกสาร: ${vo.voNumber}`,
+            `เรื่อง: ${vo.title}`,
+            `วันที่เอกสาร: ${formatCreatedAt(vo.createdAt)}`,
+            `ผลกระทบงบประมาณ: ${toSignedCurrency(vo.totalAmount || 0)} บาท`,
+            "",
+            "กรุณาตรวจสอบรายละเอียดเอกสารจากระบบ",
+            "",
+            "ขอบคุณครับ/ค่ะ",
+        ].join("\n")
+        : "";
 
     const primarySignature = useMemo(() => {
         if (companySettings.signatures && companySettings.signatures.length > 0) {
@@ -206,9 +297,6 @@ export default function VODetailPage({ params }: { params: Promise<{ id: string 
 
     const isPending = vo.status === "pending";
     const canEdit = vo.status === "draft" || vo.status === "rejected";
-    const minDisplayRows = 10;
-    const emptyRowCount = Math.max(0, minDisplayRows - vo.items.length);
-
     return (
         <div className="max-w-4xl mx-auto space-y-6 print:space-y-0 print:m-0 print:w-full print:max-w-none">
             <div className="flex items-center justify-between print:hidden">
@@ -219,7 +307,7 @@ export default function VODetailPage({ params }: { params: Promise<{ id: string 
                     <div>
                         <h1 className="text-2xl font-bold text-slate-900">รายละเอียดใบสั่งเปลี่ยนงาน</h1>
                         <p className="text-sm text-slate-500 mt-1">
-                            {vo.voNumber} • โครงการ: {currentProject?.name}
+                            {vo.voNumber} • โครงการ: {resolvedProject?.name || currentProject?.name || "-"}
                         </p>
                     </div>
                 </div>
@@ -232,6 +320,29 @@ export default function VODetailPage({ params }: { params: Promise<{ id: string 
                         <Printer size={16} className="mr-2" />
                         พิมพ์ PDF
                     </button>
+
+                    {vo.status === "approved" && (
+                        <button
+                            type="button"
+                            onClick={openEmailModal}
+                            disabled={emailSending}
+                            title={projectContactEmail ? `ส่งอีเมลไปที่ ${projectContactEmail}` : "ไม่พบอีเมลผู้ติดต่อโครงการ"}
+                            className={`inline-flex items-center justify-center rounded-lg border px-4 py-2 text-sm font-semibold shadow-sm transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${
+                                emailSentSuccess
+                                    ? "border-green-200 bg-green-50 text-green-700 hover:bg-green-50"
+                                    : "bg-white border-blue-200 text-blue-600 hover:bg-blue-50"
+                            }`}
+                        >
+                            {emailSending ? (
+                                <Loader2 size={16} className="mr-2 animate-spin" />
+                            ) : emailSentSuccess ? (
+                                <CheckCircle size={16} className="mr-2" />
+                            ) : (
+                                <Mail size={16} className="mr-2" />
+                            )}
+                            {emailSending ? "กำลังส่งเมล..." : emailSentSuccess ? "ส่งสำเร็จ" : "ส่งเมล"}
+                        </button>
+                    )}
 
                     {canEdit && (
                         <Link
@@ -277,147 +388,83 @@ export default function VODetailPage({ params }: { params: Promise<{ id: string 
                 </div>
             </div>
 
-            <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-x-auto print:overflow-visible print:shadow-none print:border-0 print:rounded-none">
-                <div className="p-8 space-y-8 min-w-[800px] print:min-w-0 print:w-full print:p-0 print:text-black">
-                    <div className="border border-black p-6 print:p-1 print:border-none relative">
-                        <div className="flex justify-between items-start mb-6">
-                            <div className="w-[120px] h-[80px] flex items-center justify-center shrink-0 overflow-hidden text-center">
-                                {companySettings.logoUrl ? (
-                                    <img src={companySettings.logoUrl} alt="Logo" className="max-w-full max-h-full object-contain" />
-                                ) : (
-                                    <span className="text-orange-600 text-xs font-bold shrink-0">LOGO</span>
-                                )}
+            <VariationOrderDocument
+                vo={vo}
+                companySettings={companySettings}
+                projectName={resolvedProject?.name || currentProject?.name || "-"}
+                projectContactName={projectContactName}
+                createdAtLabel={formatCreatedAt(vo.createdAt)}
+                primarySignature={primarySignature}
+            />
+
+            {emailModalOpen && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 print:hidden">
+                    <div className="absolute inset-0 bg-slate-900/50" onClick={() => !emailSending && setEmailModalOpen(false)} />
+                    <div className="relative w-full max-w-2xl rounded-2xl bg-white shadow-2xl border border-slate-200 overflow-hidden">
+                        <div className="px-6 py-4 border-b border-slate-200">
+                            <h3 className="text-lg font-semibold text-slate-900">ส่งอีเมลเอกสาร VO</h3>
+                            <p className="text-sm text-slate-500 mt-1">
+                                ผู้รับ: <span className="font-medium text-slate-700">{projectContactEmail}</span>
+                            </p>
+                        </div>
+
+                        <div className="px-6 py-5 space-y-4">
+                            <div>
+                                <label className="block text-sm font-medium text-slate-700 mb-1">หัวข้อ</label>
+                                <input
+                                    type="text"
+                                    value={emailSubject}
+                                    onChange={(event) => setEmailSubject(event.target.value)}
+                                    className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-blue-500 focus:ring-blue-500"
+                                />
                             </div>
-                            <div className="flex-1 text-center px-4 font-sans">
-                                <h2 className="text-[20px] font-bold mb-1 leading-tight">{companySettings.name}</h2>
-                                <p className="text-[11px] leading-relaxed font-semibold">{companySettings.address}</p>
-                                <p className="text-[11px] leading-relaxed font-semibold">โทรศัพท์: <span className="font-bold">{companySettings.phone}</span></p>
-                                <p className="text-[11px] leading-relaxed font-semibold">Email: <span className="font-bold">{companySettings.email}</span></p>
+
+                            <div>
+                                <label className="block text-sm font-medium text-slate-700 mb-1">เนื้อหา</label>
+                                <textarea
+                                    rows={10}
+                                    value={emailBody}
+                                    onChange={(event) => setEmailBody(event.target.value)}
+                                    className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-blue-500 focus:ring-blue-500"
+                                />
                             </div>
-                            <div className="w-[180px] shrink-0 flex items-start justify-end">
-                                <span className="text-[13px] font-bold border-2 border-black px-3 py-1.5 inline-block text-center leading-tight">
-                                    VARIATION ORDER
-                                    <br />
-                                    <span className="text-[10px] font-semibold">ใบสั่งเปลี่ยนแปลงงาน</span>
+
+                            <label className="flex items-start gap-3 rounded-xl border border-slate-200 px-4 py-3 bg-slate-50">
+                                <input
+                                    type="checkbox"
+                                    checked={includeAttachment}
+                                    onChange={(event) => setIncludeAttachment(event.target.checked)}
+                                    className="mt-1 h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                                />
+                                <span>
+                                    <span className="block text-sm font-medium text-slate-800">แนบเอกสาร VO</span>
+                                    <span className="block text-xs text-slate-500 mt-1">ระบบจะสร้างไฟล์ PDF สรุปเอกสาร VO และแนบไปพร้อมอีเมล</span>
                                 </span>
-                            </div>
+                            </label>
                         </div>
 
-                        <div className="grid grid-cols-12 gap-x-2 gap-y-2 mb-4 text-[12px] font-medium items-center border-b border-black pb-4">
-                            <div className="col-span-1">เรียน</div>
-                            <div className="col-span-8 border-b-2 border-black h-5 mr-10 leading-none">ผู้เกี่ยวข้องในโครงการ</div>
-                            <div className="col-span-1 text-right">วันที่</div>
-                            <div className="col-span-2 text-right border-b-2 border-black h-5 leading-none">{formatCreatedAt(vo.createdAt)}</div>
-
-                            <div className="col-span-1">เรื่อง</div>
-                            <div className="col-span-8 border-b-2 border-black h-5 mr-10 leading-none">{vo.title}</div>
-                            <div className="col-span-1 text-right">เลขที่</div>
-                            <div className="col-span-2 text-right border-b-2 border-black h-5 leading-none">{vo.voNumber}</div>
-                        </div>
-
-                        <div className="flex justify-between items-center mb-4 border-b border-black pb-4">
-                            <div className="text-left font-bold text-[14px]">VARIATION ORDER</div>
-                            <div className="text-right font-bold text-[12px]">
-                                เอกสารนี้เป็นใบสั่งเปลี่ยนแปลงงาน (เพิ่ม/ลด) ที่มีผลต่องบประมาณโครงการ
-                            </div>
-                        </div>
-
-                        <table className="w-full border-collapse border border-black text-[11px] font-medium font-sans mt-2">
-                            <thead>
-                                <tr>
-                                    <th className="border border-black py-1.5 px-1 text-center w-10 font-bold">ลำดับ</th>
-                                    <th className="border border-black py-1.5 px-2 text-center w-20 font-bold">ประเภท</th>
-                                    <th className="border border-black py-1.5 px-2 text-center font-bold">รายละเอียดงาน/วัสดุ</th>
-                                    <th className="border border-black py-1.5 px-1 text-center w-16 font-bold">จำนวน</th>
-                                    <th className="border border-black py-1.5 px-1 text-center w-16 font-bold">หน่วย</th>
-                                    <th className="border border-black py-1.5 px-2 text-center w-28 font-bold">ราคา/หน่วย</th>
-                                    <th className="border border-black py-1.5 px-2 text-center w-28 font-bold">ผลกระทบงบ</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                {vo.items.map((item, index) => {
-                                    const amount = Number(item.amount) || 0;
-                                    const signedAmount = item.type === "add" ? Math.abs(amount) : -Math.abs(amount);
-                                    return (
-                                        <tr key={item.id || `${index}-${item.description}`} className="align-top">
-                                            <td className="border-x border-black py-1.5 px-1 text-center">{index + 1}</td>
-                                            <td className="border-x border-black py-1.5 px-2 text-center font-bold">{item.type === "add" ? "เพิ่ม" : "ลด"}</td>
-                                            <td className="border-x border-black py-1.5 px-2">{item.description}</td>
-                                            <td className="border-x border-black py-1.5 px-1 text-center">{item.quantity}</td>
-                                            <td className="border-x border-black py-1.5 px-1 text-center">{item.unit}</td>
-                                            <td className="border-x border-black py-1.5 px-2 text-right">{(item.unitPrice || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
-                                            <td className="border-x border-black py-1.5 px-2 text-right font-bold">{toSignedCurrency(signedAmount)}</td>
-                                        </tr>
-                                    );
-                                })}
-
-                                {Array.from({ length: emptyRowCount }).map((_, index) => (
-                                    <tr key={`empty-row-${index}`} className="align-top h-8">
-                                        <td className="border-x border-black py-1.5 px-1 text-center"></td>
-                                        <td className="border-x border-black py-1.5 px-2 text-center"></td>
-                                        <td className="border-x border-black py-1.5 px-2"></td>
-                                        <td className="border-x border-black py-1.5 px-1 text-center"></td>
-                                        <td className="border-x border-black py-1.5 px-1 text-center"></td>
-                                        <td className="border-x border-black py-1.5 px-2 text-right"></td>
-                                        <td className="border-x border-black py-1.5 px-2 text-right"></td>
-                                    </tr>
-                                ))}
-
-                                <tr>
-                                    <td colSpan={5} className="border-x border-t border-black py-1 px-2 font-bold text-xs align-bottom">
-                                        เหตุผล/รายละเอียดเพิ่มเติม: {vo.reason || "ไม่ระบุ"}
-                                    </td>
-                                    <td className="border border-black py-1.5 px-2 text-center font-bold">Total Not Included Vat</td>
-                                    <td className="border border-black py-1.5 px-2 text-right">{toSignedCurrency(vo.subTotal || 0)}</td>
-                                </tr>
-                            </tbody>
-                            <tfoot>
-                                <tr>
-                                    <td className="border-x border-b-transparent p-0 align-top" colSpan={5}></td>
-                                    <td className="border border-black py-1.5 px-2 text-center font-bold">Vat {vo.vatRate || 0}%</td>
-                                    <td className="border border-black py-1.5 px-2 text-right">{toSignedCurrency(vo.vatAmount || 0)}</td>
-                                </tr>
-                                <tr>
-                                    <td className="border-x border-b border-black font-bold p-2 text-left h-20 text-[10px] align-top" colSpan={5}>
-                                    </td>
-                                    <td className="border border-black py-1.5 px-2 text-center font-bold">Total Included Vat</td>
-                                    <td className="border border-black py-1.5 px-2 text-right font-bold">{toSignedCurrency(vo.totalAmount || 0)}</td>
-                                </tr>
-                            </tfoot>
-                        </table>
-
-                        <div className="grid grid-cols-1 md:grid-cols-2 print:grid-cols-2 text-[11px] font-semibold mt-10 gap-8">
-                            <div className="text-center space-y-2">
-                                <div className="h-12 w-56 border-b border-black mx-auto"></div>
-                                <p>( ................................................ )</p>
-                                <p className="font-bold text-xs">ผู้เสนอขอเปลี่ยนแปลงงาน</p>
-                            </div>
-
-                            <div className="text-center space-y-2">
-                                {primarySignature ? (
-                                    <div className="space-y-2 flex flex-col items-center">
-                                        {primarySignature.signatureUrl ? (
-                                            <div className="h-12 w-56 border-b border-black flex items-end justify-center">
-                                                <img src={primarySignature.signatureUrl} alt="Signature" className="max-h-full max-w-full object-contain" />
-                                            </div>
-                                        ) : (
-                                            <div className="h-12 w-56 border-b border-black"></div>
-                                        )}
-                                        <p>{primarySignature.name || "( ................................................ )"}</p>
-                                        <p className="font-bold text-xs">{primarySignature.position || "ผู้อนุมัติ"}</p>
-                                    </div>
-                                ) : (
-                                    <div className="space-y-2 flex flex-col items-center">
-                                        <div className="h-12 w-56 border-b border-black"></div>
-                                        <p>( ................................................ )</p>
-                                        <p className="font-bold text-xs">ผู้อนุมัติ</p>
-                                    </div>
-                                )}
-                            </div>
+                        <div className="px-6 py-4 border-t border-slate-200 bg-slate-50 flex justify-end gap-3">
+                            <button
+                                type="button"
+                                onClick={() => setEmailModalOpen(false)}
+                                disabled={emailSending}
+                                className="inline-flex items-center justify-center rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+                            >
+                                ยกเลิก
+                            </button>
+                            <button
+                                type="button"
+                                onClick={handleSendEmail}
+                                disabled={emailSending}
+                                className="inline-flex items-center justify-center rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-500 disabled:opacity-50"
+                            >
+                                {emailSending ? <Loader2 size={16} className="mr-2 animate-spin" /> : <Mail size={16} className="mr-2" />}
+                                {emailSending ? "กำลังส่ง..." : "ยืนยันส่งเมล"}
+                            </button>
                         </div>
                     </div>
                 </div>
-            </div>
+            )}
         </div>
     );
 }

@@ -11,19 +11,29 @@ export default function ProjectsPage() {
     const [showCompleted, setShowCompleted] = useState(false);
 
     const filteredProjects = allProjects.filter((project) => {
-        const matchesSearch = project.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-            project.code.toLowerCase().includes(searchQuery.toLowerCase());
+        const term = searchQuery.toLowerCase();
+        const matchesSearch =
+            project.name.toLowerCase().includes(term) ||
+            project.code.toLowerCase().includes(term) ||
+            (project.contactName || "").toLowerCase().includes(term) ||
+            (project.contactPhone || "").toLowerCase().includes(term) ||
+            (project.contactEmail || "").toLowerCase().includes(term);
         const matchesStatus = showCompleted ? true : project.status !== "completed";
         return matchesSearch && matchesStatus;
     });
 
     const translatedStatus = (status: string) => {
         switch (status) {
-            case "planning": return "กำลังวางแผน";
-            case "in_progress": return "กำลังดำเนินการ";
-            case "completed": return "เสร็จสิ้น";
-            case "on_hold": return "ระงับชั่วคราว";
-            default: return status;
+            case "planning":
+                return "กำลังวางแผน";
+            case "in_progress":
+                return "กำลังดำเนินการ";
+            case "completed":
+                return "เสร็จสิ้น";
+            case "on_hold":
+                return "ระงับชั่วคราว";
+            default:
+                return status;
         }
     };
 
@@ -52,7 +62,7 @@ export default function ProjectsPage() {
                             </div>
                             <input
                                 type="text"
-                                placeholder="ค้นหาชื่อโครงการ หรือรหัส..."
+                                placeholder="ค้นหาชื่อโครงการ รหัส หรือข้อมูลผู้ติดต่อ..."
                                 value={searchQuery}
                                 onChange={(e) => setSearchQuery(e.target.value)}
                                 className="block w-full pl-10 pr-3 py-2 border border-slate-300 rounded-lg leading-5 bg-white placeholder-slate-500 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
@@ -60,10 +70,11 @@ export default function ProjectsPage() {
                         </div>
                         <button
                             onClick={() => setShowCompleted(!showCompleted)}
-                            className={`flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg border transition-colors ${showCompleted
+                            className={`flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg border transition-colors ${
+                                showCompleted
                                     ? "bg-slate-800 text-white border-slate-800 hover:bg-slate-700"
                                     : "bg-white text-slate-700 border-slate-300 hover:bg-slate-50"
-                                }`}
+                            }`}
                         >
                             <CheckCircle2 size={16} className={showCompleted ? "text-green-400" : "text-slate-400"} />
                             แสดงงานที่เสร็จสิ้น
@@ -82,6 +93,9 @@ export default function ProjectsPage() {
                                     รหัสโครงการ
                                 </th>
                                 <th scope="col" className="px-6 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">
+                                    ผู้ติดต่อ
+                                </th>
+                                <th scope="col" className="px-6 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">
                                     งบประมาณ
                                 </th>
                                 <th scope="col" className="px-6 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">
@@ -95,13 +109,13 @@ export default function ProjectsPage() {
                         <tbody className="bg-white divide-y divide-slate-200">
                             {loading ? (
                                 <tr>
-                                    <td colSpan={5} className="px-6 py-8 text-center text-slate-500">
+                                    <td colSpan={6} className="px-6 py-8 text-center text-slate-500">
                                         กำลังโหลดข้อมูลโครงการ...
                                     </td>
                                 </tr>
                             ) : filteredProjects.length === 0 ? (
                                 <tr>
-                                    <td colSpan={5} className="px-6 py-12 text-center flex-col items-center">
+                                    <td colSpan={6} className="px-6 py-12 text-center flex-col items-center">
                                         <Building2 className="mx-auto h-12 w-12 text-slate-300" />
                                         <h3 className="mt-2 text-sm font-semibold text-slate-900">ไม่มีโครงการ</h3>
                                         <p className="mt-1 text-sm text-slate-500">
@@ -117,22 +131,35 @@ export default function ProjectsPage() {
                                             <div className="text-sm text-slate-500">{project.location || "ไม่ได้ระบุสถานที่"}</div>
                                         </td>
                                         <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-500 font-mono">
-                                            {project.code}
+                                            {project.code}
+                                        </td>
+                                        <td className="px-6 py-4 text-sm text-slate-500">
+                                            <div className="font-medium text-slate-900">{project.contactName || "-"}</div>
+                                            <div>{project.contactPhone || "-"}</div>
+                                            <div className="text-slate-400">{project.contactEmail || "-"}</div>
                                         </td>
                                         <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-900">
                                             {project.budget ? `฿${project.budget.toLocaleString()}` : "ไม่ได้กำหนด"}
                                         </td>
                                         <td className="px-6 py-4 whitespace-nowrap">
-                                            <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full capitalize ${project.status === 'planning' ? 'bg-yellow-100 text-yellow-800' :
-                                                project.status === 'in_progress' ? 'bg-blue-100 text-blue-800' :
-                                                    project.status === 'completed' ? 'bg-green-100 text-green-800' :
-                                                        'bg-slate-100 text-slate-800'
-                                                }`}>
+                                            <span
+                                                className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full capitalize ${
+                                                    project.status === "planning"
+                                                        ? "bg-yellow-100 text-yellow-800"
+                                                        : project.status === "in_progress"
+                                                          ? "bg-blue-100 text-blue-800"
+                                                          : project.status === "completed"
+                                                            ? "bg-green-100 text-green-800"
+                                                            : "bg-slate-100 text-slate-800"
+                                                }`}
+                                            >
                                                 {translatedStatus(project.status)}
                                             </span>
                                         </td>
                                         <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                                            <Link href={`/projects/${project.id}`} className="text-blue-600 hover:text-blue-900">แก้ไข</Link>
+                                            <Link href={`/projects/${project.id}`} className="text-blue-600 hover:text-blue-900">
+                                                แก้ไข
+                                            </Link>
                                         </td>
                                     </tr>
                                 ))

@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server";
+﻿import { NextResponse } from "next/server";
 import { adminDb } from "@/lib/firebaseAdmin";
 import {
     getDocumentNumber,
