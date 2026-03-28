@@ -241,12 +241,11 @@ export default function VODetailPage({ params }: { params: Promise<{ id: string 
     const resolvedProject = currentProject?.id === vo?.projectId ? currentProject : voProject;
     const projectContactName = resolvedProject?.contactName?.trim() || "ผู้ติดต่อโครงการ";
     const projectContactEmail = resolvedProject?.contactEmail?.trim() || "";
-    const defaultEmailSubject = vo ? `แจ้งอนุมัติ VO ${vo.voNumber} - ${resolvedProject?.name || "โครงการ"}` : "";
+    const defaultEmailSubject = vo ? `ขออนุมัติเปลี่ยนแปลงงาน - ${vo.title || "-"} - ${vo.voNumber}` : "";
     const defaultEmailBody = vo
         ? [
             `เรียน ${projectContactName}`,
             "",
-            "เอกสารใบสั่งเปลี่ยนแปลงงาน (VO) ได้รับการอนุมัติเรียบร้อยแล้ว",
             `โครงการ: ${resolvedProject?.name || "-"}`,
             `เลขที่เอกสาร: ${vo.voNumber}`,
             `เรื่อง: ${vo.title}`,
@@ -254,8 +253,6 @@ export default function VODetailPage({ params }: { params: Promise<{ id: string 
             `ผลกระทบงบประมาณ: ${toSignedCurrency(vo.totalAmount || 0)} บาท`,
             "",
             "กรุณาตรวจสอบรายละเอียดเอกสารจากระบบ",
-            "",
-            "ขอบคุณครับ/ค่ะ",
         ].join("\n")
         : "";
 

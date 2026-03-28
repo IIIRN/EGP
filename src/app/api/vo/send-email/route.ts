@@ -1,15 +1,14 @@
-import { spawn } from "node:child_process";
-import { mkdir, readFile, rm, access } from "node:fs/promises";
-import { constants as fsConstants } from "node:fs";
-import { tmpdir } from "node:os";
-import path from "node:path";
-import { randomUUID } from "node:crypto";
+import chromium from "@sparticuz/chromium";
+import puppeteer from "puppeteer-core";
 import { NextResponse } from "next/server";
 import { adminDb } from "@/lib/firebaseAdmin";
 import { createVoPrintToken } from "@/lib/voPrintToken";
 import { Project } from "@/types/project";
 import { VariationOrder } from "@/types/vo";
-import type { CompanySettings } from "@/components/vo/VariationOrderDocument";
+import type { CompanySettings, SignatureOption } from "@/components/vo/VariationOrderDocument";
+
+export const runtime = "nodejs";
+export const maxDuration = 60;
 
 function formatDate(value: unknown) {
     try {
@@ -47,86 +46,38 @@ function escapeHtml(value: string) {
         .replaceAll("'", "&#39;");
 }
 
-function getBrowserExecutableCandidates() {
-    return [
-        process.env.EDGE_EXECUTABLE_PATH,
+function resolvePrimarySignature(companySettings: CompanySettings | null): SignatureOption | null {
+    if (!companySettings) {
+        return null;
+    }
+
+    if (companySettings.signatures && companySettings.signatures.length > 0) {
+        return companySettings.signatures[0] ?? null;
+    }
+
+    if (companySettings.signatureUrl) {
+        return {
+            name: "( ................................................ )",
+            position: "ผู้อนุมัติ",
+            signatureUrl: companySettings.signatureUrl,
+        };
+    }
+
+    return null;
+}
+
+function getLocalBrowserExecutablePath() {
+    const candidates = [
         process.env.CHROME_EXECUTABLE_PATH,
         process.env.PUPPETEER_EXECUTABLE_PATH,
-        "/usr/bin/chromium-browser",
-        "/usr/bin/chromium",
-        "/usr/bin/google-chrome",
-        "/opt/google/chrome/chrome",
-        "C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe",
+        process.env.EDGE_EXECUTABLE_PATH,
+        "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe",
+        "C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe",
         "C:\\Program Files\\Microsoft\\Edge\\Application\\msedge.exe",
+        "C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe",
     ].filter((value): value is string => Boolean(value && value.trim()));
-}
 
-async function getEdgeExecutablePath() {
-    const candidates = getBrowserExecutableCandidates();
-
-    for (const candidate of candidates) {
-        try {
-            await access(candidate, fsConstants.F_OK);
-            return candidate;
-        } catch {
-            // try next candidate
-        }
-    }
-
-    return "";
-}
-
-async function runEdgePrint(url: string, outputPath: string, userDataDir: string) {
-    const executablePath = await getEdgeExecutablePath();
-    if (!executablePath) {
-        throw new Error(`ไม่พบ browser สำหรับสร้าง PDF กรุณาตั้ง CHROME_EXECUTABLE_PATH หรือ EDGE_EXECUTABLE_PATH (${getBrowserExecutableCandidates().join(", ")})`);
-    }
-
-    await new Promise<void>((resolve, reject) => {
-        const args = [
-            "--headless=new",
-            "--disable-gpu",
-            "--no-first-run",
-            "--no-default-browser-check",
-            "--disable-extensions",
-            "--run-all-compositor-stages-before-draw",
-            "--virtual-time-budget=8000",
-            `--user-data-dir=${userDataDir}`,
-            `--print-to-pdf=${outputPath}`,
-            "--print-to-pdf-no-header",
-            url,
-        ];
-
-        const child = spawn(executablePath, args, {
-            stdio: ["ignore", "pipe", "pipe"],
-            windowsHide: true,
-        });
-
-        let stderr = "";
-        const timeout = setTimeout(() => {
-            child.kill();
-            reject(new Error("หมดเวลารอ Edge สร้าง PDF"));
-        }, 30000);
-
-        child.stderr.on("data", (chunk) => {
-            stderr += String(chunk || "");
-        });
-
-        child.on("error", (error) => {
-            clearTimeout(timeout);
-            reject(error);
-        });
-
-        child.on("exit", (code) => {
-            clearTimeout(timeout);
-            if (code === 0) {
-                resolve();
-                return;
-            }
-
-            reject(new Error(stderr.trim() || `Edge exited with code ${code}`));
-        });
-    });
+    return candidates[0] || "";
 }
 
 async function buildVoPdfAttachmentFromPrintPage(params: {
@@ -137,36 +88,62 @@ async function buildVoPdfAttachmentFromPrintPage(params: {
     const baseUrl = request.headers.get("origin") || new URL(request.url).origin;
     const token = createVoPrintToken(vo.id);
     const printUrl = `${baseUrl}/print/vo/${encodeURIComponent(vo.id)}?token=${encodeURIComponent(token)}`;
-    const tempDir = path.join(process.env.TMPDIR || tmpdir(), "vo-pdf");
-    const runId = randomUUID();
-    const outputPath = path.join(tempDir, `${runId}.pdf`);
-    const userDataDir = path.join(tempDir, `edge-profile-${runId}`);
 
-    await mkdir(tempDir, { recursive: true });
-    await mkdir(userDataDir, { recursive: true });
+    const isVercel = Boolean(process.env.VERCEL);
+    const localExecutablePath = getLocalBrowserExecutablePath();
+    const executablePath = isVercel ? await chromium.executablePath() : localExecutablePath;
+
+    if (!executablePath) {
+        throw new Error("ไม่พบ Chrome/Chromium สำหรับสร้าง PDF");
+    }
+
+    const browser = await puppeteer.launch({
+        args: isVercel
+            ? puppeteer.defaultArgs({ args: chromium.args, headless: "shell" })
+            : puppeteer.defaultArgs(),
+        executablePath,
+        headless: isVercel ? "shell" : true,
+    });
 
     try {
-        await runEdgePrint(printUrl, outputPath, userDataDir);
-        const pdfBytes = await readFile(outputPath);
+        const page = await browser.newPage();
+        await page.setViewport({ width: 1588, height: 2246, deviceScaleFactor: 2 });
+        await page.emulateMediaType("print");
+        await page.goto(printUrl, { waitUntil: "domcontentloaded", timeout: 30000 });
+        await page.waitForFunction(() => document.fonts ? document.fonts.status === "loaded" : true, { timeout: 15000 });
+        await page.waitForNetworkIdle({ idleTime: 500, timeout: 15000 });
+
+        const pdfBuffer = await page.pdf({
+            format: "A4",
+            printBackground: true,
+            preferCSSPageSize: true,
+            scale: 1,
+            margin: {
+                top: "0mm",
+                right: "0mm",
+                bottom: "0mm",
+                left: "0mm",
+            },
+        });
 
         return {
             fileName: `${vo.voNumber || "VO"}.pdf`,
             mimeType: "application/pdf",
-            contentBase64: Buffer.from(pdfBytes).toString("base64"),
+            contentBase64: Buffer.from(pdfBuffer).toString("base64"),
         };
     } finally {
-        await rm(outputPath, { force: true }).catch(() => undefined);
-        await rm(userDataDir, { recursive: true, force: true }).catch(() => undefined);
+        await browser.close();
     }
 }
 
-function buildVoPdfAttachmentFallback(params: {
+function buildVoPdfAttachmentPayload(params: {
     vo: VariationOrder;
     project: Project;
     companySettings: CompanySettings | null;
     issueDate: string;
 }) {
     const { vo, project, companySettings, issueDate } = params;
+    const primarySignature = resolvePrimarySignature(companySettings);
 
     return {
         fileName: `${vo.voNumber || "VO"}.pdf`,
@@ -191,6 +168,15 @@ function buildVoPdfAttachmentFallback(params: {
             address: companySettings?.address || "",
             phone: companySettings?.phone || "",
             email: companySettings?.email || "",
+            logoUrl: companySettings?.logoUrl || "",
+            signatureUrl: companySettings?.signatureUrl || "",
+            primarySignature: primarySignature
+                ? {
+                      name: primarySignature.name || "",
+                      position: primarySignature.position || "",
+                      signatureUrl: primarySignature.signatureUrl || "",
+                  }
+                : null,
         },
     };
 }
@@ -249,11 +235,10 @@ export async function POST(request: Request) {
         const projectName = project.name || "-";
         const issueDate = formatDate(vo.createdAt);
         const totalAmount = formatSignedCurrency(vo.totalAmount || 0);
-        const defaultSubject = `แจ้งอนุมัติ VO ${vo.voNumber} - ${projectName}`;
+        const defaultSubject = `ขออนุมัติเปลี่ยนแปลงงาน - ${vo.title || "-"} - ${vo.voNumber}`;
         const defaultText = [
             `เรียน ${recipientName}`,
             "",
-            "เอกสารใบสั่งเปลี่ยนแปลงงาน (VO) ได้รับการอนุมัติเรียบร้อยแล้ว",
             `โครงการ: ${projectName}`,
             `เลขที่เอกสาร: ${vo.voNumber}`,
             `เรื่อง: ${vo.title || "-"}`,
@@ -261,8 +246,6 @@ export async function POST(request: Request) {
             `ผลกระทบงบประมาณ: ${totalAmount} บาท`,
             "",
             "กรุณาตรวจสอบรายละเอียดเอกสารจากระบบ",
-            "",
-            "ขอบคุณครับ/ค่ะ",
         ].join("\n");
         const subject = requestedSubject || defaultSubject;
         const text = requestedTextBody || defaultText;
@@ -275,6 +258,8 @@ export async function POST(request: Request) {
         const companySettings = (settingsSnapshot.exists ? (settingsSnapshot.data()?.companySettings as CompanySettings | undefined) : null) || null;
         const senderName = String(companySettings?.name || "EGP System").trim() || "EGP System";
 
+        const allowAppsScriptPdfFallback = String(process.env.ALLOW_APPS_SCRIPT_PDF_FALLBACK || "").trim() === "true";
+
         let attachment = null;
         if (includeAttachment) {
             try {
@@ -282,9 +267,21 @@ export async function POST(request: Request) {
                     request,
                     vo,
                 });
-            } catch (attachmentError) {
-                console.warn("VO attachment print fallback activated:", attachmentError);
-                attachment = buildVoPdfAttachmentFallback({
+            } catch (pdfError) {
+                console.error("VO browser PDF generation failed:", pdfError);
+
+                if (!allowAppsScriptPdfFallback) {
+                    const message = pdfError instanceof Error ? pdfError.message : "สร้าง PDF แนบไม่สำเร็จ";
+                    return NextResponse.json(
+                        {
+                            error: `สร้าง PDF แนบไม่สำเร็จ: ${message}`,
+                        },
+                        { status: 500 }
+                    );
+                }
+
+                console.error("Falling back to Apps Script PDF layout because ALLOW_APPS_SCRIPT_PDF_FALLBACK=true");
+                attachment = buildVoPdfAttachmentPayload({
                     vo,
                     project,
                     companySettings,
@@ -316,6 +313,7 @@ export async function POST(request: Request) {
                     projectId: project.id,
                     projectName,
                     recipientName,
+                    attachmentSource: includeAttachment && attachment && "contentBase64" in attachment ? "browser" : includeAttachment ? "appscript-fallback" : "none",
                 },
             }),
         });
