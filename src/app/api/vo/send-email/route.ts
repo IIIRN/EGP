@@ -1,5 +1,6 @@
 import { spawn } from "node:child_process";
 import { mkdir, readFile, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
 import { NextResponse } from "next/server";
@@ -48,6 +49,12 @@ function escapeHtml(value: string) {
 function getEdgeExecutablePath() {
     const candidates = [
         process.env.EDGE_EXECUTABLE_PATH,
+        process.env.CHROME_EXECUTABLE_PATH,
+        process.env.PUPPETEER_EXECUTABLE_PATH,
+        "/usr/bin/chromium-browser",
+        "/usr/bin/chromium",
+        "/usr/bin/google-chrome",
+        "/opt/google/chrome/chrome",
         "C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe",
         "C:\\Program Files\\Microsoft\\Edge\\Application\\msedge.exe",
     ].filter((value): value is string => Boolean(value && value.trim()));
@@ -116,7 +123,7 @@ async function buildVoPdfAttachmentFromPrintPage(params: {
     const baseUrl = request.headers.get("origin") || new URL(request.url).origin;
     const token = createVoPrintToken(vo.id);
     const printUrl = `${baseUrl}/print/vo/${encodeURIComponent(vo.id)}?token=${encodeURIComponent(token)}`;
-    const tempDir = path.join(process.cwd(), ".tmp", "vo-pdf");
+    const tempDir = path.join(process.env.TMPDIR || tmpdir(), "vo-pdf");
     const runId = randomUUID();
     const outputPath = path.join(tempDir, `${runId}.pdf`);
     const userDataDir = path.join(tempDir, `edge-profile-${runId}`);
