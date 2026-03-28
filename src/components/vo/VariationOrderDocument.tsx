@@ -44,14 +44,16 @@ export function VariationOrderDocument({
     const minDisplayRows = 10;
     const emptyRowCount = Math.max(0, minDisplayRows - vo.items.length);
     const isAttachmentLayout = layoutVariant === "attachment";
+    const outerWidthClass = isAttachmentLayout ? "w-[210mm] max-w-[210mm]" : "w-full max-w-[210mm]";
+    const paperHeightClass = isAttachmentLayout ? "h-[297mm] min-h-[297mm]" : "min-h-[297mm]";
     const paperPaddingClass = isAttachmentLayout ? "p-[8mm]" : "p-[5mm]";
     const innerMinHeightClass = isAttachmentLayout ? "min-h-[281mm]" : "min-h-[287mm]";
     const innerPaddingClass = isAttachmentLayout ? "px-[4mm] pt-[3.5mm] pb-[9mm]" : "px-[5mm] pt-[4mm] pb-[10mm]";
     const printPaperPaddingClass = isAttachmentLayout ? "print:p-[8mm]" : "print:p-0";
 
     return (
-        <div className="mx-auto w-full max-w-[210mm] overflow-hidden bg-white shadow-[0_22px_70px_rgba(15,23,42,0.12)] print:max-w-none print:shadow-none">
-            <div className={`w-full min-h-[297mm] bg-white ${paperPaddingClass} print:min-h-0 ${printPaperPaddingClass} print:text-black`}>
+        <div className={`mx-auto overflow-hidden bg-white shadow-[0_22px_70px_rgba(15,23,42,0.12)] print:max-w-none print:shadow-none ${outerWidthClass}`}>
+            <div className={`${outerWidthClass} ${paperHeightClass} bg-white ${paperPaddingClass} print:min-h-0 print:h-[297mm] ${printPaperPaddingClass} print:text-black`}>
                 <div className={`${innerMinHeightClass} border border-black ${innerPaddingClass} relative`}>
                     <div className="flex justify-between items-start mb-6">
                         <div className="w-[120px] h-[80px] flex items-center justify-center shrink-0 overflow-hidden text-center">
@@ -64,8 +66,12 @@ export function VariationOrderDocument({
                         <div className="flex-1 text-center px-4 font-sans">
                             <h2 className="text-[20px] font-bold mb-1 leading-tight">{companySettings.name}</h2>
                             <p className="text-[11px] leading-relaxed font-semibold">{companySettings.address}</p>
-                            <p className="text-[11px] leading-relaxed font-semibold">โทรศัพท์: <span className="font-bold">{companySettings.phone}</span></p>
-                            <p className="text-[11px] leading-relaxed font-semibold">Email: <span className="font-bold">{companySettings.email}</span></p>
+                            <p className="text-[11px] leading-relaxed font-semibold">
+                                โทรศัพท์: <span className="font-bold">{companySettings.phone}</span>
+                            </p>
+                            <p className="text-[11px] leading-relaxed font-semibold">
+                                Email: <span className="font-bold">{companySettings.email}</span>
+                            </p>
                         </div>
                         <div className="w-[180px] shrink-0 flex items-start justify-end">
                             <span className="text-[13px] font-bold border-2 border-black px-3 py-1.5 inline-block text-center leading-tight">
@@ -165,8 +171,8 @@ export function VariationOrderDocument({
                     <div className="grid grid-cols-1 md:grid-cols-2 print:grid-cols-2 text-[11px] font-semibold mt-10 gap-8 pt-6">
                         <div className="text-center space-y-2">
                             <div className="h-12 w-56 border-b border-black mx-auto"></div>
-                            <p>( ................................................ )</p>
-                            <p className="font-bold text-xs">ผู้เสนอขอเปลี่ยนแปลงงาน</p>
+                            <p>( {projectContactName || "................................................"} )</p>
+                            <p className="font-bold text-xs">ผู้ควบคุมงาน</p>
                         </div>
 
                         <div className="text-center space-y-2">
