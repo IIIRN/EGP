@@ -1,5 +1,6 @@
 import { spawn } from "node:child_process";
-import { mkdir, readFile, rm } from "node:fs/promises";
+import { mkdir, readFile, rm, access } from "node:fs/promises";
+import { constants as fsConstants } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
@@ -46,8 +47,8 @@ function escapeHtml(value: string) {
         .replaceAll("'", "&#39;");
 }
 
-function getEdgeExecutablePath() {
-    const candidates = [
+function getBrowserExecutableCandidates() {
+    return [
         process.env.EDGE_EXECUTABLE_PATH,
         process.env.CHROME_EXECUTABLE_PATH,
         process.env.PUPPETEER_EXECUTABLE_PATH,
@@ -58,14 +59,27 @@ function getEdgeExecutablePath() {
         "C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe",
         "C:\\Program Files\\Microsoft\\Edge\\Application\\msedge.exe",
     ].filter((value): value is string => Boolean(value && value.trim()));
+}
 
-    return candidates[0] || "";
+async function getEdgeExecutablePath() {
+    const candidates = getBrowserExecutableCandidates();
+
+    for (const candidate of candidates) {
+        try {
+            await access(candidate, fsConstants.F_OK);
+            return candidate;
+        } catch {
+            // try next candidate
+        }
+    }
+
+    return "";
 }
 
 async function runEdgePrint(url: string, outputPath: string, userDataDir: string) {
-    const executablePath = getEdgeExecutablePath();
+    const executablePath = await getEdgeExecutablePath();
     if (!executablePath) {
-        throw new Error("ไม่พบ Microsoft Edge สำหรับสร้าง PDF");
+        throw new Error(`ไม่พบ browser สำหรับสร้าง PDF กรุณาตั้ง CHROME_EXECUTABLE_PATH หรือ EDGE_EXECUTABLE_PATH (${getBrowserExecutableCandidates().join(", ")})`);
     }
 
     await new Promise<void>((resolve, reject) => {
@@ -144,6 +158,41 @@ async function buildVoPdfAttachmentFromPrintPage(params: {
         await rm(outputPath, { force: true }).catch(() => undefined);
         await rm(userDataDir, { recursive: true, force: true }).catch(() => undefined);
     }
+}
+
+function buildVoPdfAttachmentFallback(params: {
+    vo: VariationOrder;
+    project: Project;
+    companySettings: CompanySettings | null;
+    issueDate: string;
+}) {
+    const { vo, project, companySettings, issueDate } = params;
+
+    return {
+        fileName: `${vo.voNumber || "VO"}.pdf`,
+        vo: {
+            voNumber: vo.voNumber || "-",
+            title: vo.title || "-",
+            createdAt: issueDate,
+            reason: vo.reason || "-",
+            items: Array.isArray(vo.items) ? vo.items : [],
+            subTotal: vo.subTotal || 0,
+            vatRate: vo.vatRate || 0,
+            vatAmount: vo.vatAmount || 0,
+            totalAmount: vo.totalAmount || 0,
+        },
+        project: {
+            name: project.name || "-",
+            contactName: project.contactName || "-",
+            contactEmail: project.contactEmail || "-",
+        },
+        company: {
+            name: companySettings?.name || "",
+            address: companySettings?.address || "",
+            phone: companySettings?.phone || "",
+            email: companySettings?.email || "",
+        },
+    };
 }
 
 export async function POST(request: Request) {
@@ -226,12 +275,23 @@ export async function POST(request: Request) {
         const companySettings = (settingsSnapshot.exists ? (settingsSnapshot.data()?.companySettings as CompanySettings | undefined) : null) || null;
         const senderName = String(companySettings?.name || "EGP System").trim() || "EGP System";
 
-        const attachment = includeAttachment
-            ? await buildVoPdfAttachmentFromPrintPage({
-                request,
-                vo,
-            })
-            : null;
+        let attachment = null;
+        if (includeAttachment) {
+            try {
+                attachment = await buildVoPdfAttachmentFromPrintPage({
+                    request,
+                    vo,
+                });
+            } catch (attachmentError) {
+                console.warn("VO attachment print fallback activated:", attachmentError);
+                attachment = buildVoPdfAttachmentFallback({
+                    vo,
+                    project,
+                    companySettings,
+                    issueDate,
+                });
+            }
+        }
 
         const webhookResponse = await fetch(webhookUrl, {
             method: "POST",
