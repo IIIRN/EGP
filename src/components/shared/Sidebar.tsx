@@ -143,8 +143,8 @@ export default function Sidebar({ isOpen = false, setIsOpen }: SidebarProps) {
                 <div className="relative flex h-16 items-center justify-between border-b border-white/8 bg-white/[0.025] px-6 backdrop-blur-sm">
                     <div className="flex items-center">
                         <span className="ml-3 text-lg font-bold tracking-[0.02em] text-white">
-                            <span className="text-emerald-400">Powertec</span>{" "}
-                            <span className="text-slate-200">จัดซื้อ-จ้าง</span>
+                            
+                            <span className="text-emerald-400">PWT</span>{" "}<span className="text-slate-200">จัดซื้อ-จัดจ้าง</span>
                         </span>
                     </div>
                     <button
