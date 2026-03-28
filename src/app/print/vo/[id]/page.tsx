@@ -3,8 +3,14 @@ import { isValidVoPrintToken } from "@/lib/voPrintToken";
 import { Project } from "@/types/project";
 import { VariationOrder } from "@/types/vo";
 import { CompanySettings, SignatureOption, VariationOrderDocument } from "@/components/vo/VariationOrderDocument";
+import { Sarabun } from "next/font/google";
 
 export const dynamic = "force-dynamic";
+
+const printFont = Sarabun({
+    subsets: ["latin", "thai"],
+    weight: ["400", "500", "600", "700"],
+});
 
 function formatCreatedAt(value: unknown) {
     try {
@@ -90,7 +96,7 @@ export default async function VOPrintPage(props: {
     const primarySignature = resolvePrimarySignature(companySettings);
 
     return (
-        <div className="min-h-screen bg-[#f3f4f6] print:bg-white">
+        <div className={`${printFont.className} min-h-screen bg-[#f3f4f6] print:bg-white`}>
             <style>{`
                 @page {
                     size: A4 portrait;

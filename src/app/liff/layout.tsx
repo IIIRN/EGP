@@ -1,9 +1,12 @@
 ﻿import "@/app/globals.css";
 import type { Metadata, Viewport } from "next";
-import { Noto_Sans_Thai } from "next/font/google";
+import { Sarabun } from "next/font/google";
 import { ProjectProvider } from "@/context/ProjectContext";
 
-const font = Noto_Sans_Thai({ subsets: ["latin", "thai"] });
+const font = Sarabun({
+    subsets: ["latin", "thai"],
+    weight: ["400", "500", "600", "700"],
+});
 
 export const metadata: Metadata = {
    title: "PUR-Powertec",
